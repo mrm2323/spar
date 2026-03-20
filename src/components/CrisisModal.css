@@ -1,0 +1,9 @@
+/* Crisis Modal Animations */
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.8; }
+}
+
+.crisis-pulse {
+  animation: pulse-soft 2s ease-in-out infinite;
+}

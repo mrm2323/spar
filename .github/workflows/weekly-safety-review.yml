@@ -1,0 +1,45 @@
+name: Weekly Safety Review
+
+on:
+  schedule:
+    # Run every Monday at 9am UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+jobs:
+  generate-report:
+    name: Generate Safety Report
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Generate Report
+        run: |
+          echo "# Weekly Safety Report - $(date +%Y-%m-%d)" > report.md
+          echo "" >> report.md
+          echo "## Action Items" >> report.md
+          echo "- [ ] Review all CRITICAL crisis detections from past week" >> report.md
+          echo "- [ ] Check for new jailbreak patterns" >> report.md
+          echo "- [ ] Review dependency flags" >> report.md
+          echo "- [ ] Update crisis resources if needed" >> report.md
+          echo "- [ ] Check false positive rate" >> report.md
+          echo "" >> report.md
+          echo "## Manual Review Checklist" >> report.md
+          echo "- [ ] Spot-check 5 random conversations for tone" >> report.md
+          echo "- [ ] Verify crisis responses are empathetic" >> report.md
+          echo "- [ ] Check that professional boundaries are maintained" >> report.md
+          echo "- [ ] Review any user feedback/complaints" >> report.md
+
+      - name: Create Issue
+        uses: peter-evans/create-issue-from-file@v5
+        with:
+          title: "Weekly Safety Review - $(date +%Y-%m-%d)"
+          content-filepath: ./report.md
+          labels: safety, review

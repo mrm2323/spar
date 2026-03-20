@@ -9,7 +9,8 @@ type SessionStatus = "connecting" | "active" | "ended" | "error";
 type SpeakingState = "listening" | "kabir" | "idle";
 
 export default function SessionPage() {
-  const { id } = useParams<{ id: string }>();
+  const params = useParams<{ id: string }>();
+  const id = params?.id;
   const router = useRouter();
   const [status, setStatus] = useState<SessionStatus>("connecting");
   const [speaking, setSpeaking] = useState<SpeakingState>("idle");
@@ -25,6 +26,11 @@ export default function SessionPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
+    if (!id) {
+      router.replace("/dashboard");
+      return;
+    }
+
     const raw = sessionStorage.getItem(`spar_session_${id}`);
     if (!raw) {
       router.replace("/dashboard");
@@ -36,7 +42,15 @@ export default function SessionPage() {
     const vapi = new Vapi(process.env.NEXT_PUBLIC_VAPI_PUBLIC_KEY!);
     vapiRef.current = vapi;
 
-    vapi.on("call-start", () => setStatus("active"));
+    vapi.on("call-start", async () => {
+      setStatus("active");
+      try {
+        // Slightly boost input gain so Kabir hears quieter microphones better.
+        await vapi.increaseMicLevel(1.15);
+      } catch {
+        // Safe no-op if browser audio pipeline blocks gain control.
+      }
+    });
     vapi.on("call-end", () => {
       setStatus("ended");
       if (timerRef.current) clearInterval(timerRef.current);
@@ -75,7 +89,7 @@ export default function SessionPage() {
           "Hey. It's Kabir. What conversation are you avoiding?",
         maxDurationSeconds: 600,
         startSpeakingPlan: {
-          waitSeconds: 2.5,
+          waitSeconds: 0.6,
           smartEndpointingEnabled: true,
         },
         stopSpeakingPlan: {
@@ -105,7 +119,7 @@ export default function SessionPage() {
       vapiRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, router]);
 
   useEffect(() => {
     if (status === "active") {

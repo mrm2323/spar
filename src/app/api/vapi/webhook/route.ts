@@ -85,7 +85,7 @@ export async function POST(req: Request) {
             "Hey. It's Kabir. What conversation are you avoiding?",
           maxDurationSeconds: 600,
           startSpeakingPlan: {
-            waitSeconds: 2.5,
+            waitSeconds: 0.6,
             smartEndpointingEnabled: true,
           },
           stopSpeakingPlan: {

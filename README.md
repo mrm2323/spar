@@ -20,6 +20,14 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Next Hardening Patch Set
+
+- Webhook signature verification
+- Strict ownership checks on all session and notes fetches
+- API rate limiting
+- Lightweight safety filter for prompt/transcript/notes
+- Latency improvements: prompt size trim, async notes job queue, better polling/event strategy
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
