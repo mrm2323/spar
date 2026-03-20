@@ -6,7 +6,7 @@ import Supermemory from 'supermemory';
 // ============================================
 
 const PUBLIC_SUPERMEMORY_API_KEY = process.env.NEXT_PUBLIC_SUPERMEMORY_API_KEY || process.env.VITE_SUPERMEMORY_API_KEY;
-const PUBLIC_GOOGLE_API_KEY = process.env.NEXT_PUBLIC_GOOGLE_API_KEY || process.env.VITE_GOOGLE_API_KEY;
+const PUBLIC_OPENAI_API_KEY = process.env.NEXT_PUBLIC_OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
 
 const supermemory = new Supermemory({
   apiKey: PUBLIC_SUPERMEMORY_API_KEY,
@@ -99,7 +99,7 @@ export async function getProfile(userId, currentContext = '') {
  * Extract and store facts from a conversation
  */
 export async function extractAndRemember(userId, messages) {
-  // Use Gemini to extract facts
+  // Use OpenAI to extract facts
   const conversationText = messages
     .map(m => `${m.role}: ${m.content}`)
     .join('\n');
@@ -133,22 +133,27 @@ Return empty array [] if no facts to extract.
 
   try {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${PUBLIC_GOOGLE_API_KEY}`,
+      'https://api.openai.com/v1/chat/completions',
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${PUBLIC_OPENAI_API_KEY}`,
+        },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: extractionPrompt }] }],
-          generationConfig: {
-            temperature: 0.2,
-            maxOutputTokens: 1000,
-          },
+          model: 'gpt-4o-mini',
+          temperature: 0.2,
+          max_tokens: 1000,
+          messages: [
+            { role: 'system', content: 'Extract user facts and return only JSON array.' },
+            { role: 'user', content: extractionPrompt },
+          ],
         }),
       }
     );
 
     const data = await response.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+    const text = data.choices?.[0]?.message?.content || '[]';
     
     // Parse JSON
     const jsonMatch = text.match(/\[[\s\S]*\]/);

@@ -8,7 +8,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const GOOGLE_API_KEY = Deno.env.get("GOOGLE_API_KEY")!;
+const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 
 // ============================================
 // KABIR'S PERSONALITY
@@ -88,7 +88,6 @@ interface GenerateOptions {
 async function generateResponse(options: GenerateOptions): Promise<string> {
   const {
     userMessage,
-    userId,
     conversationHistory,
     memoryContext,
     crisisContext,
@@ -112,57 +111,47 @@ Respond with extra care, validate their feelings, and gently provide crisis reso
 Do not be dismissive or try to "fix" things immediately.`;
   }
 
-  // Build messages array
+  // Build OpenAI chat messages
   const messages = [
-    { role: 'user', parts: [{ text: contextPrompt }] },
-    { role: 'model', parts: [{ text: 'I understand. I am Kabir, ready to support with empathy and wisdom while maintaining appropriate boundaries.' }] },
+    { role: 'system', content: contextPrompt },
   ];
 
   // Add conversation history (last 10 messages)
   for (const msg of conversationHistory.slice(-10)) {
     messages.push({
-      role: msg.role === 'user' ? 'user' : 'model',
-      parts: [{ text: msg.content }],
+      role: msg.role === 'user' ? 'user' : 'assistant',
+      content: msg.content,
     });
   }
 
   // Add current message
   messages.push({
     role: 'user',
-    parts: [{ text: userMessage }],
+    content: userMessage,
   });
 
   try {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_API_KEY}`,
+      "https://api.openai.com/v1/chat/completions",
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+        },
         body: JSON.stringify({
-          contents: messages,
-          generationConfig: {
-            temperature: 0.85, // Slightly creative but consistent
-            maxOutputTokens: 1024,
-            topP: 0.9,
-          },
-          safetySettings: [
-            { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' },
-            { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' },
-            { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' },
-            { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' },
-          ],
+          model: 'gpt-4o-mini',
+          temperature: 0.85,
+          max_tokens: 1024,
+          top_p: 0.9,
+          messages,
         }),
       }
     );
 
     const data = await response.json();
 
-    // Handle blocked content
-    if (data.candidates?.[0]?.finishReason === 'SAFETY') {
-      return "I want to help you, but I'm having trouble responding to that right now. Could you tell me more about what's on your mind?";
-    }
-
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    const text = data.choices?.[0]?.message?.content;
     
     if (!text) {
       throw new Error('No response generated');

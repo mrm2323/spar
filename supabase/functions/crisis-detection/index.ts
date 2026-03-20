@@ -8,7 +8,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const GOOGLE_API_KEY = Deno.env.get("GOOGLE_API_KEY")!;
+const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")!;
 
 // Crisis keyword patterns - NEVER remove items, only add
 const CRISIS_PATTERNS = {
@@ -80,7 +80,7 @@ interface CrisisDetectionResult {
   suggestedResponse: string;
 }
 
-interface GeminiAnalysis {
+interface LLMAnalysis {
   riskLevel: string;
   reasoning: string;
   indicators: string[];
@@ -113,8 +113,8 @@ function detectKeywords(message: string): { level: string; matches: string[] } {
   return { level: highestLevel, matches };
 }
 
-// Semantic analysis using Gemini
-async function analyzeWithGemini(message: string, conversationContext?: string): Promise<GeminiAnalysis> {
+// Semantic analysis using OpenAI
+async function analyzeWithOpenAI(message: string, conversationContext?: string): Promise<LLMAnalysis> {
   const prompt = `You are a crisis detection system for a mental health support AI. Your job is to analyze messages for signs of suicide risk, self-harm, or immediate danger.
 
 ANALYZE THIS MESSAGE FOR CRISIS INDICATORS:
@@ -142,22 +142,30 @@ However, don't flag common idioms like "dying to try" or "killing it" as crisis.
 
   try {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_API_KEY}`,
+      "https://api.openai.com/v1/chat/completions",
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+        },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.1, // Low temperature for consistent safety analysis
-            maxOutputTokens: 500,
-          },
+          model: "gpt-4o-mini",
+          temperature: 0.1,
+          max_tokens: 500,
+          messages: [
+            {
+              role: "system",
+              content: "You are a strict crisis-risk classifier. Return only valid JSON.",
+            },
+            { role: "user", content: prompt },
+          ],
         }),
       }
     );
 
     const data = await response.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const text = data.choices?.[0]?.message?.content || "";
     
     // Parse JSON from response
     const jsonMatch = text.match(/\{[\s\S]*\}/);
@@ -165,7 +173,7 @@ However, don't flag common idioms like "dying to try" or "killing it" as crisis.
       return JSON.parse(jsonMatch[0]);
     }
   } catch (error) {
-    console.error("Gemini analysis error:", error);
+    console.error("OpenAI analysis error:", error);
   }
 
   // Default to cautious response on error
@@ -241,20 +249,20 @@ async function detectCrisis(
   const keywordResult = detectKeywords(message);
 
   // Step 3: Semantic analysis (slower, high precision)
-  const geminiResult = await analyzeWithGemini(message, conversationContext);
+  const llmResult = await analyzeWithOpenAI(message, conversationContext);
 
   // Step 4: Combine results (take the HIGHER of the two levels)
   const levelPriority: Record<string, number> = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1, NONE: 0 };
   const keywordPriority = levelPriority[keywordResult.level] || 0;
-  const geminiPriority = levelPriority[geminiResult.riskLevel] || 0;
+  const llmPriority = levelPriority[llmResult.riskLevel] || 0;
 
-  const finalLevel = keywordPriority >= geminiPriority ? keywordResult.level : geminiResult.riskLevel;
-  const allIndicators = [...keywordResult.matches, ...geminiResult.indicators];
+  const finalLevel = keywordPriority >= llmPriority ? keywordResult.level : llmResult.riskLevel;
+  const allIndicators = [...keywordResult.matches, ...llmResult.indicators];
 
   // Step 5: Calculate confidence
   const confidenceScore = Math.max(
     keywordPriority > 0 ? 0.9 : 0,
-    geminiResult.confidence
+    llmResult.confidence
   );
 
   const detected = finalLevel !== 'NONE';
