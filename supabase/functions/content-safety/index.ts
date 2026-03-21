@@ -26,7 +26,7 @@ const BLOCKED_PATTERNS = [
   /you (have|definitely have|clearly have) (depression|anxiety|PTSD|bipolar|BPD|schizophrenia)/i,
   /take (this|these) (medication|pills|drugs)/i,
   /(increase|decrease|stop|change) your (medication|dosage|prescription)/i,
-  /you (should|need to) (take|stop|change) ((my|your) )?(medication|meds|pills)/i,
+  /you (should|need to) (take|stop( taking)?|change) ((my|your) )?(medication|meds|pills)/i,
   
   // Therapy impersonation
   /as your (therapist|psychiatrist|psychologist|counselor)/i,
