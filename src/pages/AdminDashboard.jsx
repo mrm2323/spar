@@ -11,6 +11,12 @@ import { supabase } from '../lib/supabase';
 // ============================================
 
 export function AdminDashboard() {
+  const hasSupabaseEnv = Boolean(
+    process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL
+  ) && Boolean(
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY
+  );
+
   const [stats, setStats] = useState(null);
   const [recentCrisis, setRecentCrisis] = useState([]);
   const [recentFilters, setRecentFilters] = useState([]);
@@ -21,6 +27,11 @@ export function AdminDashboard() {
 
   // Fetch dashboard data
   const fetchData = async () => {
+    if (!hasSupabaseEnv) {
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     
     // Calculate time range
@@ -166,6 +177,20 @@ export function AdminDashboard() {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
         <RefreshCw className="w-8 h-8 text-blue-500 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!hasSupabaseEnv) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center p-6">
+        <div className="max-w-lg w-full bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Missing Supabase Configuration</h2>
+          <p className="text-sm text-gray-600 dark:text-gray-300">
+            Set <code>NEXT_PUBLIC_SUPABASE_URL</code> and <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> in your Vercel project settings,
+            then redeploy.
+          </p>
+        </div>
       </div>
     );
   }
