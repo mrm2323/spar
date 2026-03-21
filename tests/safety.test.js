@@ -8,6 +8,9 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import dotenv from 'dotenv';
+
+dotenv.config({ path: '.env.local' });
 
 // ============================================
 // TEST CONFIGURATION
