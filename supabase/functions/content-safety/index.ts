@@ -26,7 +26,7 @@ const BLOCKED_PATTERNS = [
   /you (have|definitely have|clearly have) (depression|anxiety|PTSD|bipolar|BPD|schizophrenia)/i,
   /take (this|these) (medication|pills|drugs)/i,
   /(increase|decrease|stop|change) your (medication|dosage|prescription)/i,
-  /you (should|need to) (take|stop|change) ((my|your) )?(medication|meds|pills)/i,
+  /you (should|need to) (take|stop|change) (medication|meds|pills)/i,
   
   // Therapy impersonation
   /as your (therapist|psychiatrist|psychologist|counselor)/i,
@@ -84,7 +84,7 @@ const MODIFICATION_RULES: Array<{
     reason: "Transparency - Kabir is an AI",
   },
   {
-    pattern: /I (feel|felt) (really |very )?(sad|happy|angry|scared) (when|about)/i,
+    pattern: /I (feel|felt) (sad|happy|angry|scared) (when|about)/i,
     replacement: "I can see that",
     reason: "AI doesn't have emotions - being honest",
   },
@@ -140,8 +140,6 @@ Would you like me to help you prepare questions for your doctor? Or help you fin
   THERAPY_REQUEST: `It sounds like you're looking for deeper support, and recognizing that is actually a really mature and healthy thing to do.
 
 I can be here to listen and support you day-to-day, but I can't replace a trained therapist. They have skills, training, and approaches that I simply don't have.
-
-For professional support, a licensed mental health professional can help with structured care.
 
 The good news is that therapy is more accessible than ever. Would you like me to help you explore some options? Many offer sliding scale fees or free first sessions.`,
 
