@@ -1,3 +1,5 @@
+import { EarlyAccessForm } from "./early-access-form";
+
 export default function LandingPage() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-between bg-[#0A0A0F] px-6 py-16 text-white">
@@ -21,25 +23,9 @@ export default function LandingPage() {
           <p>The thing you&apos;ve been putting off.</p>
         </div>
 
-        <form
-          action="https://formspree.io/f/maqpbppn"
-          method="POST"
-          className="mt-12 flex w-full max-w-sm gap-2"
-        >
-          <input
-            type="email"
-            name="email"
-            required
-            placeholder="your@email.com"
-            className="flex-1 rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3 text-sm text-white placeholder-zinc-600 outline-none transition-colors focus:border-zinc-600"
-          />
-          <button
-            type="submit"
-            className="whitespace-nowrap rounded-lg bg-white px-5 py-3 text-sm font-medium text-zinc-950 transition-colors hover:bg-zinc-200"
-          >
-            Get early access
-          </button>
-        </form>
+        {/* Client-side submit so we never leave the app. */}
+        {/* eslint-disable-next-line @next/next/no-before-interactive-script-outside-document */}
+        <EarlyAccessForm />
       </div>
 
       <p className="mt-16 text-xs text-zinc-700">

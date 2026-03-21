@@ -7,6 +7,14 @@ import {
 import { buildSystemPrompt } from "@/lib/kabir/system-prompt";
 import { NextResponse } from "next/server";
 
+function normalizePhone(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.startsWith("1") && digits.length === 11) return `+${digits}`;
+  if (raw.trim().startsWith("+")) return raw.trim();
+  return digits ? `+${digits}` : raw.trim();
+}
+
 export async function POST(req: Request) {
   const body = await req.json();
   const { type } = body.message || body;
@@ -21,7 +29,10 @@ export async function POST(req: Request) {
   switch (type) {
     case "assistant-request": {
       const call = body.message?.call || body.call;
-      const phoneNumber = call?.customer?.number;
+      const phoneNumberRaw = call?.customer?.number;
+      const phoneNumber = phoneNumberRaw
+        ? normalizePhone(String(phoneNumberRaw))
+        : null;
       console.log(
         "[VAPI WEBHOOK] assistant-request from phone:",
         phoneNumber || "web"
