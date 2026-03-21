@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import memory from '../services/memory';
 
 // ============================================
 // KABIR MEMORY HOOK
@@ -14,6 +13,45 @@ export function useKabirMemory(userId) {
   // Track unsaved conversation for extraction
   const conversationBuffer = useRef([]);
 
+  const hasPersonalization = useCallback((p) => {
+    return (
+      (p?.staticFacts?.length > 0) ||
+      (p?.dynamicContext?.length > 0) ||
+      (p?.relevantMemories?.length > 0)
+    );
+  }, []);
+
+  const formatMemoriesForPrompt = useCallback((p) => {
+    const sections = [];
+
+    if (p?.staticFacts?.length > 0) {
+      sections.push(`## What I Know About You:\n${p.staticFacts.map(f => `- ${f}`).join('\n')}`);
+    }
+    if (p?.dynamicContext?.length > 0) {
+      sections.push(`## Recent Context:\n${p.dynamicContext.map(f => `- ${f}`).join('\n')}`);
+    }
+    if (p?.relevantMemories?.length > 0) {
+      sections.push(`## Relevant Memories:\n${p.relevantMemories.map(m => `- ${m.content}`).join('\n')}`);
+    }
+
+    return sections.join('\n\n') || 'Getting to know you...';
+  }, []);
+
+  const callMemoryApi = useCallback(async (payload) => {
+    const res = await fetch('/api/memory', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, ...payload }),
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Memory API failed');
+    }
+
+    return res.json();
+  }, [userId]);
+
   // Load initial profile
   useEffect(() => {
     if (!userId) return;
@@ -21,7 +59,8 @@ export function useKabirMemory(userId) {
     async function loadProfile() {
       setIsLoading(true);
       try {
-        const userProfile = await memory.getProfile(userId);
+        const data = await callMemoryApi({ action: 'profile' });
+        const userProfile = data.profile;
         setProfile(userProfile);
       } catch (err) {
         setError(err);
@@ -31,20 +70,20 @@ export function useKabirMemory(userId) {
     }
 
     loadProfile();
-  }, [userId]);
+  }, [userId, callMemoryApi]);
 
   // Get context for current query
   const getContext = useCallback(async (query) => {
     if (!userId) return null;
 
     try {
-      const contextProfile = await memory.getProfile(userId, query);
-      return memory.formatMemoriesForPrompt(contextProfile);
+      const data = await callMemoryApi({ action: 'profile', currentContext: query });
+      return data.context || formatMemoriesForPrompt(data.profile || {});
     } catch (err) {
       console.error('Get context error:', err);
       return '';
     }
-  }, [userId]);
+  }, [userId, callMemoryApi, formatMemoriesForPrompt]);
 
   // Add message to buffer (for extraction)
   const recordMessage = useCallback((role, content) => {
@@ -65,26 +104,28 @@ export function useKabirMemory(userId) {
     if (conversationBuffer.current.length === 0) return;
     
     try {
-      await memory.extractAndRemember(userId, conversationBuffer.current);
+      await callMemoryApi({ action: 'extract', messages: conversationBuffer.current });
       conversationBuffer.current = [];
       
       // Refresh profile
-      const updatedProfile = await memory.getProfile(userId);
+      const updated = await callMemoryApi({ action: 'profile' });
+      const updatedProfile = updated.profile;
       setProfile(updatedProfile);
     } catch (err) {
       console.error('Extract facts error:', err);
     }
-  }, [userId]);
+  }, [userId, callMemoryApi]);
 
   // Manually remember something
   const rememberFact = useCallback(async (content, category, metadata) => {
     if (!userId) return false;
 
     try {
-      await memory.remember(userId, content, category, metadata);
+      await callMemoryApi({ action: 'remember', content, category, metadata });
       
       // Refresh profile
-      const updatedProfile = await memory.getProfile(userId);
+      const updated = await callMemoryApi({ action: 'profile' });
+      const updatedProfile = updated.profile;
       setProfile(updatedProfile);
       
       return true;
@@ -92,33 +133,34 @@ export function useKabirMemory(userId) {
       console.error('Remember fact error:', err);
       return false;
     }
-  }, [userId]);
+  }, [userId, callMemoryApi]);
 
   // Search memories
   const searchMemories = useCallback(async (query, limit = 5) => {
     if (!userId) return [];
     
     try {
-      return await memory.recall(userId, query, { limit });
+      const data = await callMemoryApi({ action: 'recall', query, limit });
+      return data.memories || [];
     } catch (err) {
       console.error('Search memories error:', err);
       return [];
     }
-  }, [userId]);
+  }, [userId, callMemoryApi]);
 
   // Clear all memories
   const clearAllMemories = useCallback(async () => {
     if (!userId) return false;
 
     try {
-      await memory.forgetAll(userId);
+      await callMemoryApi({ action: 'forget-all' });
       setProfile(null);
       return true;
     } catch (err) {
       console.error('Clear memories error:', err);
       return false;
     }
-  }, [userId]);
+  }, [userId, callMemoryApi]);
 
   // Force extraction (on conversation end)
   const flushBuffer = useCallback(async () => {
@@ -129,7 +171,7 @@ export function useKabirMemory(userId) {
     profile,
     isLoading,
     error,
-    hasMemories: memory.hasPersonalization(profile || {}),
+    hasMemories: hasPersonalization(profile || {}),
     getContext,
     recordMessage,
     rememberFact,

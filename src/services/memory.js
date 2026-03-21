@@ -5,12 +5,12 @@ import Supermemory from 'supermemory';
 // Persistent memory using Supermemory API
 // ============================================
 
-const PUBLIC_SUPERMEMORY_API_KEY = process.env.NEXT_PUBLIC_SUPERMEMORY_API_KEY || process.env.VITE_SUPERMEMORY_API_KEY;
-const PUBLIC_OPENAI_API_KEY = process.env.NEXT_PUBLIC_OPENAI_API_KEY || process.env.VITE_OPENAI_API_KEY;
+const SERVER_SUPERMEMORY_API_KEY = process.env.SUPERMEMORY_API_KEY;
+const SERVER_OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-const supermemory = new Supermemory({
-  apiKey: PUBLIC_SUPERMEMORY_API_KEY,
-});
+const supermemory = SERVER_SUPERMEMORY_API_KEY
+  ? new Supermemory({ apiKey: SERVER_SUPERMEMORY_API_KEY })
+  : null;
 
 // Memory categories
 const MEMORY_CATEGORIES = {
@@ -33,6 +33,7 @@ const MEMORY_CATEGORIES = {
  * Store a memory about the user
  */
 export async function remember(userId, content, category, metadata = {}) {
+  if (!supermemory) return null;
   try {
     const result = await supermemory.add({
       content,
@@ -56,6 +57,7 @@ export async function remember(userId, content, category, metadata = {}) {
  * Search for relevant memories
  */
 export async function recall(userId, query, options = {}) {
+  if (!supermemory) return [];
   try {
     const result = await supermemory.search({
       containerTag: `kabir_user_${userId}`,
@@ -73,6 +75,9 @@ export async function recall(userId, query, options = {}) {
  * Get user's memory profile (static + dynamic facts)
  */
 export async function getProfile(userId, currentContext = '') {
+  if (!supermemory) {
+    return { staticFacts: [], dynamicContext: [], relevantMemories: [] };
+  }
   try {
     const result = await supermemory.profile({
       containerTag: `kabir_user_${userId}`,
@@ -99,6 +104,7 @@ export async function getProfile(userId, currentContext = '') {
  * Extract and store facts from a conversation
  */
 export async function extractAndRemember(userId, messages) {
+  if (!SERVER_OPENAI_API_KEY || !supermemory) return [];
   // Use OpenAI to extract facts
   const conversationText = messages
     .map(m => `${m.role}: ${m.content}`)
@@ -138,7 +144,7 @@ Return empty array [] if no facts to extract.
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${PUBLIC_OPENAI_API_KEY}`,
+          Authorization: `Bearer ${SERVER_OPENAI_API_KEY}`,
         },
         body: JSON.stringify({
           model: 'gpt-4o-mini',
@@ -180,6 +186,7 @@ Return empty array [] if no facts to extract.
  * Delete a specific memory
  */
 export async function forget(userId, memoryId) {
+  if (!supermemory) return false;
   try {
     await supermemory.delete({
       containerTag: `kabir_user_${userId}`,
@@ -196,6 +203,7 @@ export async function forget(userId, memoryId) {
  * Clear all memories for a user
  */
 export async function forgetAll(userId) {
+  if (!supermemory) return false;
   try {
     await supermemory.deleteContainer({
       containerTag: `kabir_user_${userId}`,

@@ -66,7 +66,7 @@ export function useSafeKabir() {
   }, [getConversationContext]);
 
   // Step 2: Get Kabir's response
-  const getKabirResponse = useCallback(async (message, userId, crisisContext = null) => {
+  const getKabirResponse = useCallback(async (message, userId, crisisContext = null, memoryContext = null) => {
     try {
       const response = await fetch(KABIR_RESPONSE_URL, {
         method: 'POST',
@@ -80,6 +80,7 @@ export function useSafeKabir() {
           sessionId: sessionId.current,
           conversationHistory: conversationHistory.current.slice(-10),
           crisisContext,
+          memoryContext,
         }),
       });
 
@@ -134,7 +135,7 @@ export function useSafeKabir() {
   }, []);
 
   // Main send message function
-  const sendMessage = useCallback(async (userMessage) => {
+  const sendMessage = useCallback(async (userMessage, options = {}) => {
     setIsLoading(true);
     setError(null);
 
@@ -179,7 +180,12 @@ export function useSafeKabir() {
         indicators: crisisResult.indicators,
       } : null;
 
-      const aiResponse = await getKabirResponse(userMessage, userId, crisisContext);
+      const aiResponse = await getKabirResponse(
+        userMessage,
+        userId,
+        crisisContext,
+        options.memoryContext || null
+      );
 
       // STEP 3: Filter response before showing
       const filteredResponse = await filterResponse(userMessage, aiResponse, userId);

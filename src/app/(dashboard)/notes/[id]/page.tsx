@@ -1,6 +1,8 @@
 import { auth } from "@clerk/nextjs/server";
 import { createSupabaseAdmin } from "@/lib/supabase/server";
+import { sessionBelongsToUser } from "@/lib/session-access";
 import { NotesClient } from "./notes-client";
+import { redirect } from "next/navigation";
 
 export default async function NotesPage({
   params,
@@ -9,11 +11,12 @@ export default async function NotesPage({
 }) {
   const { id } = await params;
   const { userId } = await auth();
-  if (!userId) return null;
+  if (!userId) redirect("/sign-in");
 
   const supabase = createSupabaseAdmin();
+  const allowed = await sessionBelongsToUser(supabase, id, userId);
+  if (!allowed) redirect("/dashboard");
 
-  // Use limit(1) + maybeSingle to handle possible duplicates gracefully
   const { data: report } = await supabase
     .from("forensics_reports")
     .select("*")
@@ -22,6 +25,12 @@ export default async function NotesPage({
     .limit(1)
     .maybeSingle();
 
+  const { data: session } = await supabase
+    .from("sessions")
+    .select("duration_seconds, transcript, ended_at, started_at")
+    .eq("id", id)
+    .single();
+
   return (
     <NotesClient
       sessionId={id}
@@ -29,6 +38,20 @@ export default async function NotesPage({
         report ? (report.moments as Record<string, unknown>) : null
       }
       initialDate={report?.created_at || null}
+      overallScore={
+        typeof report?.overall_score === "number"
+          ? report.overall_score
+          : null
+      }
+      initialSession={
+        session
+          ? {
+              duration_seconds: session.duration_seconds,
+              transcript: session.transcript,
+              ended_at: session.ended_at,
+            }
+          : null
+      }
     />
   );
 }

@@ -4,7 +4,7 @@ import {
   generateKabirNotes,
   generateMemoryUpdate,
 } from "@/lib/forensics/generate";
-import { buildSystemPrompt } from "@/lib/kabir/system-prompt";
+import { buildKabirPrompt } from "@/lib/kabir/system-prompt";
 import { NextResponse } from "next/server";
 
 function normalizePhone(raw: string): string {
@@ -60,7 +60,13 @@ export async function POST(req: Request) {
         }
       }
 
-      const systemPrompt = buildSystemPrompt(null, memory);
+      const systemPrompt = buildKabirPrompt({
+        scenarioRaw: undefined,
+        channel: "phone",
+        durationSeconds: 600,
+        userMemory:
+          memory && memory.total_sessions > 0 ? memory.kabir_memory || undefined : undefined,
+      });
 
       if (phoneNumber) {
         const { data: session } = await supabase

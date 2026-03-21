@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { createSupabaseAdmin } from "@/lib/supabase/server";
-import { buildSystemPrompt } from "@/lib/kabir/system-prompt";
+import { buildKabirPrompt } from "@/lib/kabir/system-prompt";
 import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
@@ -25,7 +25,13 @@ export async function POST(req: Request) {
       console.log("No existing memory (expected for new users):", memoryError.code);
     }
 
-    const systemPrompt = buildSystemPrompt(context, memory);
+    const systemPrompt = buildKabirPrompt({
+      scenarioRaw: context || undefined,
+      channel: "web",
+      durationSeconds: 600,
+      userMemory:
+        memory && memory.total_sessions > 0 ? memory.kabir_memory || undefined : undefined,
+    });
 
     const { data: session, error } = await supabase
       .from("sessions")

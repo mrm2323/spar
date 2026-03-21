@@ -2,7 +2,15 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Mic, Loader2, ArrowRight, Paperclip, X, Phone, Check } from "lucide-react";
+import {
+  Mic,
+  Loader2,
+  ArrowRight,
+  Paperclip,
+  X,
+  Phone,
+  Check,
+} from "lucide-react";
 import Link from "next/link";
 
 interface PastSession {
@@ -10,6 +18,45 @@ interface PastSession {
   context: string | null;
   ended_at: string | null;
   duration_seconds: number | null;
+  notes_preview?: string | null;
+  confidence?: number | null;
+}
+
+interface PatternInsight {
+  weakness: string;
+  total_sessions: number;
+}
+
+function relativeSessionTime(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const now = Date.now();
+  const diff = now - d.getTime();
+  const min = Math.floor(diff / 60000);
+  const hr = Math.floor(min / 60);
+  const day = Math.floor(hr / 24);
+  if (min < 1) return "Just now";
+  if (min < 60) return `${min} min ago`;
+  if (hr < 24) return `${hr} hour${hr === 1 ? "" : "s"} ago`;
+  if (day === 1) return "Yesterday";
+  if (day < 7) return `${day} days ago`;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function SessionConfidenceBar({ score }: { score: number | null | undefined }) {
+  const p =
+    score == null ? 50 : Math.min(100, Math.max(0, score));
+  return (
+    <div className="relative mt-2 flex h-1.5 w-full max-w-[120px] overflow-hidden rounded-sm">
+      <div className="h-full flex-[1] bg-red-500/80" />
+      <div className="h-full flex-[1] bg-amber-500/80" />
+      <div className="h-full flex-[1] bg-emerald-600/80" />
+      <div
+        className="pointer-events-none absolute top-1/2 h-2.5 w-px -translate-y-1/2 bg-white"
+        style={{ left: `calc(${p}% - 0.5px)` }}
+      />
+    </div>
+  );
 }
 
 interface ProcessedFile {
@@ -23,6 +70,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(false);
   const [showContext, setShowContext] = useState(false);
   const [sessions, setSessions] = useState<PastSession[]>([]);
+  const [pattern, setPattern] = useState<PatternInsight | null>(null);
   const [files, setFiles] = useState<ProcessedFile[]>([]);
   const [fileProcessing, setFileProcessing] = useState(false);
   const [phone, setPhone] = useState("");
@@ -35,6 +83,7 @@ export default function DashboardPage() {
       .then((r) => r.json())
       .then((data) => {
         if (data.sessions) setSessions(data.sessions);
+        if (data.pattern) setPattern(data.pattern);
       })
       .catch(() => {});
 
@@ -84,7 +133,6 @@ export default function DashboardPage() {
   async function startSession() {
     setLoading(true);
     try {
-      // Build full context including processed files
       let fullContext = context.trim() || "";
       if (files.length > 0) {
         const fileContext = files
@@ -116,22 +164,17 @@ export default function DashboardPage() {
     }
   }
 
-  const formatDuration = (seconds: number | null) => {
-    if (!seconds) return "";
-    const m = Math.floor(seconds / 60);
-    return `${m} min`;
-  };
-
   return (
-    <div>
-      <div className="flex min-h-[70vh] flex-col items-center justify-center">
+    <div className="text-[#E2E8F0]">
+      {/* TOP */}
+      <div className="flex min-h-[52vh] flex-col items-center justify-center">
         <div className="text-center">
           <button
+            type="button"
             onClick={startSession}
             disabled={loading}
-            className="group relative mx-auto mb-6 flex h-36 w-36 items-center justify-center rounded-full border-2 border-zinc-800 bg-zinc-900 transition-all hover:border-emerald-500/50 hover:shadow-[0_0_40px_rgba(16,185,129,0.12)] disabled:opacity-50"
+            className="group relative mx-auto mb-6 flex h-36 w-36 items-center justify-center rounded-full border-2 border-zinc-800 bg-zinc-900/80 transition-colors hover:border-emerald-600/40 disabled:opacity-50"
           >
-            <div className="animate-pulse-slow absolute inset-0 rounded-full bg-emerald-500/5 opacity-0 transition-opacity group-hover:opacity-100" />
             {loading ? (
               <Loader2 className="h-10 w-10 animate-spin text-zinc-500" />
             ) : (
@@ -149,8 +192,9 @@ export default function DashboardPage() {
             <div className="mt-6">
               {!showContext ? (
                 <button
+                  type="button"
                   onClick={() => setShowContext(true)}
-                  className="text-sm text-zinc-600 transition-colors hover:text-zinc-400"
+                  className="text-sm text-zinc-500 hover:text-zinc-300"
                 >
                   Add context for Kabir
                 </button>
@@ -162,10 +206,9 @@ export default function DashboardPage() {
                     placeholder="e.g. I need to tell my roommate I'm moving out..."
                     rows={2}
                     autoFocus
-                    className="w-full rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3 text-sm text-white placeholder-zinc-600 outline-none transition-colors focus:border-zinc-700"
+                    className="w-full rounded-lg border border-zinc-800 bg-[#12121A] px-4 py-3 text-sm text-white placeholder-zinc-600 outline-none focus:border-zinc-700"
                   />
 
-                  {/* File attachments */}
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -184,6 +227,7 @@ export default function DashboardPage() {
                           <Paperclip className="h-3 w-3 shrink-0" />
                           <span className="min-w-0 truncate">{f.name}</span>
                           <button
+                            type="button"
                             onClick={() => removeFile(i)}
                             className="ml-auto shrink-0 text-zinc-600 hover:text-zinc-400"
                           >
@@ -195,9 +239,10 @@ export default function DashboardPage() {
                   )}
 
                   <button
+                    type="button"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={fileProcessing}
-                    className="mt-2 flex items-center gap-1.5 text-xs text-zinc-600 transition-colors hover:text-zinc-400 disabled:opacity-50"
+                    className="mt-2 flex items-center gap-1.5 text-xs text-zinc-600 hover:text-zinc-400 disabled:opacity-50"
                   >
                     {fileProcessing ? (
                       <Loader2 className="h-3 w-3 animate-spin" />
@@ -213,56 +258,74 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {sessions.length > 0 && (
-        <div className="border-t border-zinc-800/50 pt-12">
-          <h2 className="mb-6 text-xs font-medium uppercase tracking-widest text-zinc-600">
-            Past sessions
+      {/* MIDDLE — sessions or first-time */}
+      <div className="mt-4 border-t border-zinc-900 pt-10">
+        {sessions.length > 0 ? (
+          <>
+            <h2 className="mb-5 text-xs font-medium uppercase tracking-widest text-zinc-500">
+              Your sessions with Kabir
+            </h2>
+            <div className="space-y-3">
+              {sessions.map((session) => (
+                <Link
+                  key={session.id}
+                  href={`/notes/${session.id}`}
+                  className="block rounded-lg border border-zinc-800/80 bg-[#12121A] px-4 py-4 transition-colors hover:border-zinc-700"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+                        {relativeSessionTime(session.ended_at)}
+                      </p>
+                      <p className="mt-1 line-clamp-2 text-sm text-zinc-200">
+                        {session.notes_preview ||
+                          session.context ||
+                          "Session"}
+                      </p>
+                    </div>
+                    <ArrowRight className="h-4 w-4 shrink-0 text-zinc-600" />
+                  </div>
+                  <SessionConfidenceBar score={session.confidence ?? null} />
+                </Link>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="text-center text-sm leading-relaxed text-zinc-500">
+            First time? Tell Kabir what&apos;s coming up. He&apos;s heard it all.
+          </p>
+        )}
+      </div>
+
+      {/* Pattern — 3+ sessions */}
+      {pattern && pattern.total_sessions >= 3 && (
+        <div className="mt-10 border-t border-zinc-900 pt-10">
+          <h2 className="mb-3 text-xs font-medium uppercase tracking-widest text-zinc-500">
+            Kabir&apos;s pattern
           </h2>
-          <div className="space-y-2">
-            {sessions.map((session) => (
-              <Link
-                key={session.id}
-                href={`/notes/${session.id}`}
-                className="group flex items-center justify-between rounded-xl border border-zinc-800/30 bg-zinc-900/20 px-5 py-4 transition-all hover:border-zinc-700/50 hover:bg-zinc-900/40"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm text-zinc-400">
-                    {session.context || "Open session"}
-                  </p>
-                  <p className="mt-0.5 text-xs text-zinc-600">
-                    {session.ended_at
-                      ? new Date(session.ended_at).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                        })
-                      : ""}
-                    {session.duration_seconds
-                      ? ` · ${formatDuration(session.duration_seconds)}`
-                      : ""}
-                  </p>
-                </div>
-                <ArrowRight className="h-3.5 w-3.5 text-zinc-700 transition-colors group-hover:text-zinc-400" />
-              </Link>
-            ))}
+          <div className="rounded-lg border border-zinc-800/80 bg-[#12121A] px-4 py-4 text-sm leading-relaxed text-zinc-300">
+            Across {pattern.total_sessions} sessions, Kabir noticed you tend to{" "}
+            {pattern.weakness}. Keep practicing — this usually improves fast.
           </div>
         </div>
       )}
 
-      {/* Phone linking */}
-      <div className="border-t border-zinc-800/50 pt-8 pb-12">
+      {/* Phone */}
+      <div className="mt-10 border-t border-zinc-900 pt-8">
         <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-widest text-zinc-600">
           <Phone className="h-3 w-3" />
           Call Kabir by phone
         </div>
         {linkedPhone ? (
           <p className="mt-3 text-sm text-zinc-500">
-            Your phone <span className="text-zinc-300">{linkedPhone}</span> is
-            linked. Phone call sessions and notes will appear above.
+            Your phone{" "}
+            <span className="text-zinc-300">{linkedPhone}</span> is linked.
+            Phone sessions appear in your list above.
           </p>
         ) : (
           <div className="mt-3">
             <p className="mb-3 text-sm text-zinc-500">
-              Link your phone number so calls to Kabir show up here with notes.
+              Link your number so phone calls show up here with notes.
             </p>
             <div className="flex max-w-xs items-center gap-2">
               <input
@@ -273,9 +336,10 @@ export default function DashboardPage() {
                   setPhoneSaved(false);
                 }}
                 placeholder="+1 (555) 123-4567"
-                className="flex-1 rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-sm text-white placeholder-zinc-600 outline-none focus:border-zinc-700"
+                className="flex-1 rounded-lg border border-zinc-800 bg-[#12121A] px-3 py-2 text-sm text-white placeholder-zinc-600 outline-none focus:border-zinc-700"
               />
               <button
+                type="button"
                 onClick={async () => {
                   if (!phone.trim()) return;
                   const res = await fetch("/api/user/phone", {
@@ -287,17 +351,17 @@ export default function DashboardPage() {
                   if (data.success) {
                     setLinkedPhone(data.phone);
                     setPhoneSaved(true);
-                    // Refresh sessions to include any retroactively linked phone sessions
                     fetch("/api/sessions")
                       .then((r) => r.json())
                       .then((d) => {
                         if (d.sessions) setSessions(d.sessions);
+                        if (d.pattern) setPattern(d.pattern);
                       })
                       .catch(() => {});
                   }
                 }}
                 disabled={phoneSaved}
-                className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-400 transition-colors hover:border-zinc-600 hover:text-white disabled:opacity-50"
+                className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-400 hover:border-zinc-600 hover:text-white disabled:opacity-50"
               >
                 {phoneSaved ? (
                   <Check className="h-4 w-4 text-emerald-500" />

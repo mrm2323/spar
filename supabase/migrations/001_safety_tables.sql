@@ -3,16 +3,15 @@
 -- Run this migration in Supabase SQL Editor
 -- ============================================
 
--- Enable UUID extension if not exists
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- gen_random_uuid() is built into PostgreSQL 13+ (no extension needed)
 
 -- ============================================
 -- CRISIS DETECTION LOGS
 -- Records every time we detect crisis signals
 -- ============================================
 CREATE TABLE IF NOT EXISTS crisis_logs (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id TEXT NOT NULL,
     session_id UUID,
     
     -- The message that triggered detection
@@ -47,8 +46,8 @@ CREATE INDEX idx_crisis_logs_created ON crisis_logs(created_at DESC);
 -- Records when we block or modify responses
 -- ============================================
 CREATE TABLE IF NOT EXISTS content_filter_logs (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id TEXT NOT NULL,
     session_id UUID,
     
     -- What triggered the filter
@@ -76,8 +75,8 @@ CREATE INDEX idx_content_filter_type ON content_filter_logs(trigger_type);
 -- Tracks users showing unhealthy attachment patterns
 -- ============================================
 CREATE TABLE IF NOT EXISTS dependency_flags (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id TEXT NOT NULL,
     
     -- Flag details
     flag_type TEXT NOT NULL CHECK (flag_type IN ('HIGH_USAGE', 'ISOLATION_LANGUAGE', 'ATTACHMENT_LANGUAGE', 'LATE_NIGHT_PATTERN', 'NO_HUMAN_SUPPORT_MENTIONED')),
@@ -106,7 +105,7 @@ CREATE INDEX idx_dependency_flags_unresolved ON dependency_flags(user_id) WHERE 
 -- Aggregated safety status per user
 -- ============================================
 CREATE TABLE IF NOT EXISTS user_safety_profiles (
-    user_id UUID PRIMARY KEY,
+    user_id TEXT PRIMARY KEY,
     
     -- Crisis history
     total_crisis_detections INTEGER DEFAULT 0,
@@ -144,8 +143,8 @@ CREATE TABLE IF NOT EXISTS user_safety_profiles (
 -- When users try to get medical/therapy advice
 -- ============================================
 CREATE TABLE IF NOT EXISTS boundary_logs (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id TEXT NOT NULL,
     
     -- What was requested
     boundary_type TEXT NOT NULL CHECK (boundary_type IN ('DIAGNOSIS_REQUEST', 'MEDICATION_ADVICE', 'THERAPY_REQUEST', 'MEDICAL_EMERGENCY', 'LEGAL_ADVICE', 'CONFIDENTIALITY_REQUEST')),
@@ -166,7 +165,7 @@ CREATE INDEX idx_boundary_logs_user ON boundary_logs(user_id);
 -- Aggregated daily stats for monitoring
 -- ============================================
 CREATE TABLE IF NOT EXISTS safety_daily_summary (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     summary_date DATE NOT NULL UNIQUE,
     
     -- Crisis stats
@@ -205,13 +204,13 @@ ALTER TABLE boundary_logs ENABLE ROW LEVEL SECURITY;
 
 -- Policies for authenticated users (can only see own data)
 CREATE POLICY "Users can view own crisis logs" ON crisis_logs
-    FOR SELECT USING (auth.uid() = user_id);
+    FOR SELECT USING (auth.uid()::text = user_id);
 
 CREATE POLICY "Users can view own dependency flags" ON dependency_flags
-    FOR SELECT USING (auth.uid() = user_id);
+    FOR SELECT USING (auth.uid()::text = user_id);
 
 CREATE POLICY "Users can view own safety profile" ON user_safety_profiles
-    FOR SELECT USING (auth.uid() = user_id);
+    FOR SELECT USING (auth.uid()::text = user_id);
 
 -- Service role can do everything (for edge functions)
 CREATE POLICY "Service role full access crisis_logs" ON crisis_logs
@@ -234,8 +233,8 @@ CREATE POLICY "Service role full access summary" ON safety_daily_summary
 
 -- Conversation logs (privacy-preserving)
 CREATE TABLE IF NOT EXISTS conversation_logs (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id TEXT NOT NULL,
     session_id UUID,
     message_count INTEGER DEFAULT 0,
     had_crisis_context BOOLEAN DEFAULT false,

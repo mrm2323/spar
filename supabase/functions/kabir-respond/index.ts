@@ -207,15 +207,20 @@ serve(async (req) => {
       crisisContext,
     });
 
-    // Log conversation (without full content for privacy)
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-    await supabase.from('conversation_logs').insert({
-      user_id: userId,
-      session_id: sessionId,
-      message_count: conversationHistory.length + 1,
-      had_crisis_context: !!crisisContext,
-      had_memory_context: !!memoryContext,
-    }).catch(() => {}); // Non-critical, don't fail on logging error
+    // Log conversation (without full content for privacy).
+    // Logging should never break the primary response path.
+    try {
+      const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+      await supabase.from('conversation_logs').insert({
+        user_id: userId,
+        session_id: sessionId,
+        message_count: conversationHistory.length + 1,
+        had_crisis_context: !!crisisContext,
+        had_memory_context: !!memoryContext,
+      });
+    } catch (logError) {
+      console.warn("Conversation logging skipped:", logError);
+    }
 
     return new Response(
       JSON.stringify({ response }),

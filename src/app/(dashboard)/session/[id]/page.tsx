@@ -5,14 +5,20 @@ import { useParams, useRouter } from "next/navigation";
 import { Paperclip, Loader2, Check } from "lucide-react";
 import Vapi from "@vapi-ai/web";
 
-type SessionStatus = "connecting" | "active" | "ended" | "error";
+type SessionStatus =
+  | "trust"
+  | "connecting"
+  | "active"
+  | "ended"
+  | "error";
 type SpeakingState = "listening" | "kabir" | "idle";
 
 export default function SessionPage() {
   const params = useParams<{ id: string }>();
   const id = params?.id;
   const router = useRouter();
-  const [status, setStatus] = useState<SessionStatus>("connecting");
+  const [trustAcknowledged, setTrustAcknowledged] = useState(false);
+  const [status, setStatus] = useState<SessionStatus>("trust");
   const [speaking, setSpeaking] = useState<SpeakingState>("idle");
   const [elapsed, setElapsed] = useState(0);
   const [errorMsg, setErrorMsg] = useState("");
@@ -37,7 +43,13 @@ export default function SessionPage() {
       return;
     }
 
+    if (!trustAcknowledged) {
+      return;
+    }
+
     const { systemPrompt } = JSON.parse(raw);
+
+    queueMicrotask(() => setStatus("connecting"));
 
     const vapi = new Vapi(process.env.NEXT_PUBLIC_VAPI_PUBLIC_KEY!);
     vapiRef.current = vapi;
@@ -45,10 +57,9 @@ export default function SessionPage() {
     vapi.on("call-start", async () => {
       setStatus("active");
       try {
-        // Slightly boost input gain so Kabir hears quieter microphones better.
         await vapi.increaseMicLevel(1.15);
       } catch {
-        // Safe no-op if browser audio pipeline blocks gain control.
+        /* noop */
       }
     });
     vapi.on("call-end", () => {
@@ -85,8 +96,7 @@ export default function SessionPage() {
           provider: "vapi",
           voiceId: "Rohan",
         },
-        firstMessage:
-          "Hey. It's Kabir. What conversation are you avoiding?",
+        firstMessage: "Hey. It's Kabir. What conversation are you avoiding?",
         maxDurationSeconds: 600,
         startSpeakingPlan: {
           waitSeconds: 0.6,
@@ -118,8 +128,7 @@ export default function SessionPage() {
       vapi.stop();
       vapiRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, router]);
+  }, [id, router, trustAcknowledged]);
 
   useEffect(() => {
     if (status === "active") {
@@ -226,6 +235,23 @@ export default function SessionPage() {
     );
   }
 
+  if (status === "trust" && id) {
+    return (
+      <div className="flex min-h-[80vh] flex-col items-center justify-center px-6 text-center">
+        <p className="max-w-sm text-sm leading-relaxed text-zinc-300">
+          This conversation stays between you and Kabir.
+        </p>
+        <button
+          type="button"
+          onClick={() => setTrustAcknowledged(true)}
+          className="mt-8 rounded border border-emerald-600/60 bg-emerald-600/15 px-6 py-3 text-sm font-medium text-emerald-100 hover:bg-emerald-600/25"
+        >
+          Continue
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-[80vh] flex-col items-center justify-center">
       {status === "connecting" && (
@@ -255,10 +281,7 @@ export default function SessionPage() {
                     : "bg-zinc-700"
                 }`}
                 style={{
-                  height:
-                    speaking === "kabir"
-                      ? `${12 + Math.random() * 20}px`
-                      : "8px",
+                  height: speaking === "kabir" ? `${16 + (i % 3) * 6}px` : "8px",
                   animationDelay: `${i * 0.1}s`,
                 }}
               />
@@ -273,7 +296,6 @@ export default function SessionPage() {
             {formatTime(elapsed)}
           </p>
 
-          {/* File attachment during call */}
           <input
             ref={fileInputRef}
             type="file"

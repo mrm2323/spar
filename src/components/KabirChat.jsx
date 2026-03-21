@@ -90,7 +90,7 @@ export function KabirChat() {
     // Add welcome message
     setMessages([{
       role: 'assistant',
-      content: "Hey! I'm Kabir. I'm here whenever you want to talk, think through something, or just need someone to listen. What's on your mind?",
+      content: "It's Kabir. What conversation are you avoiding?",
       timestamp: new Date(),
     }]);
   };
@@ -120,7 +120,9 @@ export function KabirChat() {
 
     // Send through safe Kabir (handles crisis detection + content filtering)
     try {
-      const result = await safeSendMessage(trimmedInput);
+      const result = await safeSendMessage(trimmedInput, {
+        memoryContext,
+      });
 
       // Add assistant response
       const assistantMessage = {
@@ -236,10 +238,10 @@ export function KabirChat() {
               <Bot className="w-8 h-8 text-white" />
             </div>
             <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
-              Hey, I'm Kabir
+              It's Kabir
             </h2>
             <p className="text-gray-500 dark:text-gray-400 max-w-sm">
-              I'm here to listen, support, and help you think through whatever's on your mind. What's going on?
+              What conversation are you avoiding? Give me the person and the situation. Then we run it.
             </p>
           </div>
         ) : (

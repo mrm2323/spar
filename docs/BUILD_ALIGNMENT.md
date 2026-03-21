@@ -25,6 +25,17 @@ After you merge/push `main`, the PR may auto-close or you can close it manually 
 
 ### 2) Deploy Edge Functions (Supabase CLI, repo root)
 
+**One script (after `supabase login`):** run in your **Mac/Linux terminal** at repo root (not the Supabase SQL Editor — that is only for `.sql` migrations):
+
+```bash
+cd /path/to/spar   # your clone
+./scripts/owner-supabase-deploy.sh
+# optional: POST smoke tests to all three functions
+SMOKE=1 ./scripts/owner-supabase-deploy.sh
+```
+
+**Manual equivalent:**
+
 ```bash
 supabase login
 supabase link --project-ref <PROJECT_REF>
@@ -32,6 +43,8 @@ supabase functions deploy crisis-detection
 supabase functions deploy content-safety
 supabase functions deploy kabir-respond
 ```
+
+`supabase/config.toml` is in-repo (from `supabase init`); seed file is disabled until you add `supabase/seed.sql`.
 
 ### 3) Edge Function secrets (Dashboard → Project → Edge Functions → Secrets, or CLI)
 
@@ -48,7 +61,7 @@ supabase functions deploy kabir-respond
 
 - [ ] Apply **all** files under `supabase/migrations/` to the **same** project (CLI `supabase db push` or SQL Editor).
 
-**Before production:** Reconcile **Clerk `user_id` (text)** vs migrations that assume **`user_id UUID`** — adjust policies/tables or add mapping; do not blindly apply UUID-only assumptions.
+✅ **Resolved:** safety tables now use **`user_id TEXT`** (migration `002_user_id_text_alignment.sql`) so Clerk IDs like `user_...` are supported.
 
 ### 5) Smoke tests (after deploy)
 
@@ -60,6 +73,18 @@ supabase functions deploy kabir-respond
 
 Header: `Authorization: Bearer <NEXT_PUBLIC_SUPABASE_ANON_KEY>` (unless the function docs say otherwise).
 
+**Example bodies:**
+
+| Function | JSON body (minimal) |
+|----------|---------------------|
+| `crisis-detection` | `{"message":"Hello","userId":"<uuid>"}` |
+| `content-safety` | `{"userMessage":"Hi","aiResponse":"I hear you.","userId":"<uuid>"}` |
+| `kabir-respond` | `{"message":"Say hi in one sentence.","userId":"<uuid>"}` |
+
+Clerk-style IDs are supported. Example: `{"userId":"user_test_123"}`.
+
+Or run `SMOKE=1 ./scripts/owner-supabase-deploy.sh` (uses `user_test_123`).
+
 ### 6) GitHub Actions secrets
 
 Repo → **Settings → Secrets and variables → Actions**:
@@ -70,6 +95,7 @@ Repo → **Settings → Secrets and variables → Actions**:
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` |
 | `NEXT_PUBLIC_OPENAI_API_KEY` |
 | `NEXT_PUBLIC_SUPERMEMORY_API_KEY` |
+| `SUPERMEMORY_API_KEY` |
 | `SUPABASE_SERVICE_ROLE_KEY` |
 | `OPENAI_API_KEY` |
 
