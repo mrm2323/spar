@@ -300,10 +300,10 @@ function DashboardInner() {
   return (
     <div className="text-[#E2E8F0]">
       {/* TOP */}
-      <div className="flex min-h-[52vh] flex-col items-center justify-center">
+      <div className="flex min-h-[60vh] flex-col items-center justify-center">
         <div className="text-center">
           {!loading && (
-            <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.18em] text-cyan-300/85">
+            <p className="mb-4 text-[12px] font-medium uppercase tracking-[0.18em] text-cyan-300/85">
               Tap mic to start
             </p>
           )}
@@ -338,24 +338,24 @@ function DashboardInner() {
           )}
 
           {capStatus ? (
-            <p className="mx-auto mt-3 max-w-lg text-center text-xs text-cyan-300/80">
+            <p className="mx-auto mt-5 max-w-lg text-center text-sm text-cyan-300/80">
               Free launch practice left: {Math.floor(capStatus.remainingSeconds / 60)} min {String(capStatus.remainingSeconds % 60).padStart(2, "0")} sec
             </p>
           ) : null}
 
           {startError ? (
-            <p className="mx-auto mt-2 max-w-lg text-center text-xs text-amber-300/90">
+            <p className="mx-auto mt-3 max-w-lg text-center text-sm text-amber-300/90">
               {startError}
             </p>
           ) : null}
 
-          <h1 className="text-2xl font-semibold tracking-tight">
+          <h1 className="mt-8 text-4xl font-bold tracking-tight leading-tight">
             {loading
               ? "Connecting to Kabir..."
               : "What conversation are you looking forward to?"}
           </h1>
 
-          <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-slate-300">
+          <p className="mx-auto mt-6 max-w-xl text-base leading-relaxed text-slate-300">
             Kabir is an AI coach. Practice first, then walk in ready.
           </p>
 
@@ -434,18 +434,18 @@ function DashboardInner() {
       </div>
 
       {/* MIDDLE — sessions or first-time */}
-      <div className="mt-4 border-t border-slate-800/70 pt-10">
+      <div className="mt-8 border-t border-slate-800/70 pt-14">
         {sessions.length > 0 ? (
           <>
-            <h2 className="mb-5 text-xs font-medium uppercase tracking-widest text-slate-400">
+            <h2 className="mb-7 text-sm font-semibold uppercase tracking-widest text-slate-300\">
               Your conversation threads
             </h2>
-            <div className="space-y-3">
+            <div className="space-y-4">
               {visibleSessions.map((session) => (
                 <Link
                   key={session.id}
                   href={`/notes/${session.id}`}
-                  className="block rounded-lg border border-slate-600/50 bg-[#0b1d3e]/55 px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition-colors hover:border-cyan-500/50"
+                  className="block rounded-lg border border-slate-600/50 bg-[#0b1d3e]/55 px-5 py-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition-colors hover:border-cyan-500/50\"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
