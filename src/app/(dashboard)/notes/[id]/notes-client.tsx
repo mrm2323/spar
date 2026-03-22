@@ -192,9 +192,11 @@ export function NotesClient({
   const [transcriptExpanded, setTranscriptExpanded] = useState(false);
   const [continuing, setContinuing] = useState(false);
   const [restarting, setRestarting] = useState(false);
+  const [sessionStartError, setSessionStartError] = useState<string | null>(null);
 
   async function continuePractice() {
     setContinuing(true);
+    setSessionStartError(null);
     trackEvent("session_continue_clicked", { session_id: sessionId });
     try {
       const res = await fetch("/api/session/start", {
@@ -205,7 +207,7 @@ export function NotesClient({
           context: null,
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.sessionId) {
         console.error("Continue session failed:", data);
         trackEvent("session_continue_failed", {
@@ -213,6 +215,9 @@ export function NotesClient({
           status: res.status,
           error: data?.error || "unknown",
         });
+        setSessionStartError(
+          data?.message || data?.error || "Could not start another session right now."
+        );
         setContinuing(false);
         return;
       }
@@ -227,6 +232,8 @@ export function NotesClient({
           firstMessage:
             data.firstMessage ||
             "Hey. It's Kabir. What conversation are you looking forward to?",
+          maxDurationSeconds: data.maxDurationSeconds,
+          cap: data.cap,
         })
       );
       router.push(`/session/${data.sessionId}`);
@@ -236,12 +243,14 @@ export function NotesClient({
         status: 0,
         error: "network_or_unknown",
       });
+      setSessionStartError("Could not start another session right now.");
       setContinuing(false);
     }
   }
 
   async function restartPractice() {
     setRestarting(true);
+    setSessionStartError(null);
     trackEvent("session_restart_clicked", { session_id: sessionId });
     try {
       const res = await fetch("/api/session/start", {
@@ -253,7 +262,7 @@ export function NotesClient({
           context: null,
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.sessionId) {
         console.error("Restart session failed:", data);
         trackEvent("session_restart_failed", {
@@ -261,6 +270,9 @@ export function NotesClient({
           status: res.status,
           error: data?.error || "unknown",
         });
+        setSessionStartError(
+          data?.message || data?.error || "Could not start another session right now."
+        );
         setRestarting(false);
         return;
       }
@@ -275,6 +287,8 @@ export function NotesClient({
           firstMessage:
             data.firstMessage ||
             "Hey. Let's run this from the top. Give me your opening line when you're ready.",
+          maxDurationSeconds: data.maxDurationSeconds,
+          cap: data.cap,
         })
       );
       router.push(`/session/${data.sessionId}`);
@@ -284,6 +298,7 @@ export function NotesClient({
         status: 0,
         error: "network_or_unknown",
       });
+      setSessionStartError("Could not start another session right now.");
       setRestarting(false);
     }
   }
@@ -790,6 +805,11 @@ export function NotesClient({
         </section>
 
         {/* SECTION 6 */}
+        {sessionStartError ? (
+          <p className="rounded border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">
+            {sessionStartError}
+          </p>
+        ) : null}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <button
             type="button"

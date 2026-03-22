@@ -90,6 +90,7 @@ export default function SessionPage() {
     "idle" | "processing" | "done"
   >("idle");
   const [screenError, setScreenError] = useState<string | null>(null);
+  const [capHint, setCapHint] = useState<string | null>(null);
   const [callRating, setCallRating] = useState<number | null>(null);
   const [recommendScore, setRecommendScore] = useState<number | null>(null);
   const [callFeedback, setCallFeedback] = useState("");
@@ -115,8 +116,18 @@ export default function SessionPage() {
     const parsed = JSON.parse(raw) as {
       systemPrompt: string;
       firstMessage?: string;
+      maxDurationSeconds?: number;
+      cap?: { sessionTimeMessage?: string };
     };
     const { systemPrompt, firstMessage } = parsed;
+
+    const sessionMaxDuration =
+      typeof parsed.maxDurationSeconds === "number" && parsed.maxDurationSeconds > 0
+        ? parsed.maxDurationSeconds
+        : 600;
+    if (parsed.cap?.sessionTimeMessage) {
+      setCapHint(parsed.cap.sessionTimeMessage);
+    }
 
     queueMicrotask(() => setStatus("connecting"));
 
@@ -168,7 +179,7 @@ export default function SessionPage() {
         firstMessage:
           firstMessage ||
           "Hey. It's Kabir. What conversation are you looking forward to?",
-        maxDurationSeconds: 600,
+        maxDurationSeconds: sessionMaxDuration,
         startSpeakingPlan: {
           waitSeconds: 0.3,
           smartEndpointingEnabled: true,
@@ -830,6 +841,9 @@ export default function SessionPage() {
           <p className="mt-2 font-mono text-sm text-slate-400">
             {formatTime(elapsed)}
           </p>
+          {capHint ? (
+            <p className="mt-2 text-xs text-cyan-300/80">{capHint}</p>
+          ) : null}
 
           <input
             ref={fileInputRef}

@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { createSupabaseAdmin } from "@/lib/supabase/server";
 import { parseSessionFeedbackInput, upsertSessionFeedback } from "@/lib/session-feedback";
+import { getUserSessionUsage } from "@/lib/session-cap";
 import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
@@ -42,17 +43,27 @@ export async function POST(req: Request) {
 
     const endedAtIso = new Date().toISOString();
     const startedMs = session.started_at ? Date.parse(session.started_at) : NaN;
-    const durationSeconds = Number.isFinite(startedMs)
+    const rawDurationSeconds = Number.isFinite(startedMs)
       ? Math.max(0, Math.round((Date.now() - startedMs) / 1000))
       : null;
+
+    const usageBeforeEnd = await getUserSessionUsage(supabase, userId, {
+      includeActive: false,
+      excludeSessionId: sessionId,
+    });
+
+    const cappedDurationSeconds =
+      rawDurationSeconds !== null
+        ? Math.min(rawDurationSeconds, usageBeforeEnd.remainingSeconds)
+        : null;
 
     const updateData: Record<string, unknown> = {
       status: "completed",
       ended_at: endedAtIso,
     };
 
-    if (durationSeconds !== null) {
-      updateData.duration_seconds = durationSeconds;
+    if (cappedDurationSeconds !== null) {
+      updateData.duration_seconds = cappedDurationSeconds;
     }
 
     // Save vapiCallId if provided and not already set (backup in case PATCH failed)
@@ -134,7 +145,15 @@ export async function POST(req: Request) {
       }
     }
 
-    return NextResponse.json({ success: true });
+    const usageAfterEnd = await getUserSessionUsage(supabase, userId, {
+      includeActive: true,
+    });
+
+    return NextResponse.json({
+      success: true,
+      cap: usageAfterEnd,
+      duration_seconds_recorded: cappedDurationSeconds,
+    });
   } catch (error) {
     console.error("[SESSION END] unexpected error", error);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });

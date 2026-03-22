@@ -7,6 +7,11 @@ import {
 } from "@/lib/kabir/resume-context";
 import { buildKabirPrompt } from "@/lib/kabir/system-prompt";
 import { getMemoryPreference } from "@/lib/memory/preferences";
+import {
+  formatRemainingTime,
+  getAllowedSessionSeconds,
+  getUserSessionUsage,
+} from "@/lib/session-cap";
 import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
@@ -32,6 +37,24 @@ export async function POST(req: Request) {
     let effectiveContext = context || null;
 
     const supabase = createSupabaseAdmin();
+
+    const usage = await getUserSessionUsage(supabase, userId, {
+      includeActive: true,
+    });
+    const allowedSessionSeconds = getAllowedSessionSeconds(usage.remainingSeconds);
+
+    if (allowedSessionSeconds <= 0) {
+      return NextResponse.json(
+        {
+          error: "You have reached your current 15-minute practice cap.",
+          code: "SESSION_MINUTE_CAP_REACHED",
+          message:
+            "You have completed your 15 free practice minutes. Thank you for practicing with Kabir.",
+          cap: usage,
+        },
+        { status: 403 }
+      );
+    }
 
     if (effectiveMode === "restart" && referenceSessionId && !effectiveContext) {
       const { data: referenceSession } = await supabase
@@ -75,7 +98,7 @@ export async function POST(req: Request) {
     const systemPrompt = buildKabirPrompt({
       scenarioRaw: effectiveContext || undefined,
       channel: "web",
-      durationSeconds: 600,
+      durationSeconds: allowedSessionSeconds,
       userMemory: memoryText.trim() ? memoryText : undefined,
       resumeContext: resumeBlock || undefined,
     });
@@ -104,6 +127,12 @@ export async function POST(req: Request) {
     return NextResponse.json({
       sessionId: session.id,
       systemPrompt,
+      maxDurationSeconds: allowedSessionSeconds,
+      cap: {
+        ...usage,
+        sessionSecondsAllocated: allowedSessionSeconds,
+        sessionTimeMessage: `You have ${formatRemainingTime(usage.remainingSeconds)} left in your free practice bank.`,
+      },
       firstMessage: effectiveMode === "restart"
         ? "Hey. Let's run this from the top. Give me your opening line when you're ready."
         : effectiveResumeSessionId

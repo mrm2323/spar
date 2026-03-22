@@ -196,13 +196,10 @@ export default function MemorySettingsPage() {
           Control whether Kabir uses memory in coaching, and review/edit stored facts.
         </p>
         {!supermemoryConfigured && (
-          <p className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100/95">
-            Long-term semantic memory (Supermemory) is not configured on the server.
-            Kabir still uses your{" "}
+          <p className="mt-3 rounded-lg border border-slate-600/40 bg-slate-700/20 px-3 py-2 text-xs text-slate-300/95">
+            Kabir is using your{" "}
             <strong className="font-medium">recent practice timeline</strong> from this
-            app. Ask your admin to set{" "}
-            <code className="rounded bg-slate-950/60 px-1">SUPERMEMORY_API_KEY</code> for
-            full recall across sessions.
+            session to personalize coaching.
           </p>
         )}
 
@@ -327,9 +324,7 @@ export default function MemorySettingsPage() {
           {!entriesError && entries.length === 0 && (
             <p className="text-sm text-slate-400">
               No individual memory entries yet. They appear after calls when facts are
-              extracted, or add a goal above. If you expect many entries, confirm{" "}
-              <code className="rounded bg-slate-950/60 px-1">SUPERMEMORY_API_KEY</code> is
-              set — without it, only the practice timeline above is stored.
+              extracted, or add a goal above.
             </p>
           )}
 

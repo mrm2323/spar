@@ -1,5 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { createSupabaseAdmin } from "@/lib/supabase/server";
+import { getUserSessionUsage } from "@/lib/session-cap";
 import { NextResponse } from "next/server";
 
 type EnrichedSession = {
@@ -62,6 +63,9 @@ export async function GET() {
   }
 
   const supabase = createSupabaseAdmin();
+  const cap = await getUserSessionUsage(supabase, userId, {
+    includeActive: true,
+  });
 
   // Get the user's linked phone number
   const { data: memory } = await supabase
@@ -186,6 +190,7 @@ export async function GET() {
 
   return NextResponse.json({
     sessions: threaded,
+    cap,
     pattern:
       memoryFull && (memoryFull.total_sessions ?? 0) >= 3
         ? {

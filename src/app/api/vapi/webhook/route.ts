@@ -5,6 +5,11 @@ import { buildFullKabirContext } from "@/lib/kabir/memory";
 import { buildKabirPrompt } from "@/lib/kabir/system-prompt";
 import memoryService from "@/services/memory";
 import { getMemoryPreference } from "@/lib/memory/preferences";
+import {
+  formatRemainingTime,
+  getAllowedSessionSeconds,
+  getUserSessionUsage,
+} from "@/lib/session-cap";
 import { NextResponse } from "next/server";
 
 function shouldDropTranscriptMessage(content: string): boolean {
@@ -165,14 +170,23 @@ export async function POST(req: Request) {
         memoryText = await buildFullKabirContext(resolvedUserId, supabase);
       }
 
+      const usage = await getUserSessionUsage(supabase, resolvedUserId, {
+        includeActive: true,
+      }).catch(() => null);
+      const allowedSessionSeconds = usage
+        ? getAllowedSessionSeconds(usage.remainingSeconds)
+        : 600;
+      const reachedCap = usage ? allowedSessionSeconds <= 0 : false;
+      const effectiveDurationSeconds = reachedCap ? 45 : allowedSessionSeconds;
+
       const systemPrompt = buildKabirPrompt({
         scenarioRaw: undefined,
         channel: "phone",
-        durationSeconds: 600,
+        durationSeconds: effectiveDurationSeconds,
         userMemory: memoryText.trim() ? memoryText : undefined,
       });
 
-      if (phoneNumber) {
+      if (phoneNumber && !reachedCap) {
         const { data: session } = await supabase
           .from("sessions")
           .insert({
@@ -202,9 +216,12 @@ export async function POST(req: Request) {
             provider: "vapi",
             voiceId: "Rohan",
           },
-          firstMessage:
-            "Hey. It's Kabir. What conversation are you looking forward to?",
-          maxDurationSeconds: 600,
+          firstMessage: reachedCap
+            ? `Hey, it is Kabir. You have completed your 15 free practice minutes for now. Thanks for showing up and putting in the work. Come back when your next practice window is available.`
+            : usage
+              ? `Hey. It is Kabir. You have ${formatRemainingTime(usage.remainingSeconds)} left in your current practice bank. What conversation are you looking forward to?`
+              : "Hey. It's Kabir. What conversation are you looking forward to?",
+          maxDurationSeconds: effectiveDurationSeconds,
           startSpeakingPlan: {
             waitSeconds: 0.6,
             smartEndpointingEnabled: true,
@@ -306,12 +323,32 @@ export async function POST(req: Request) {
       if (!callId) break;
 
       if (status === "ended") {
+        const endedAtIso = new Date().toISOString();
+        const { data: existingSession } = await supabase
+          .from("sessions")
+          .select("id, started_at")
+          .eq("vapi_call_id", callId)
+          .maybeSingle();
+
+        const startedMs = existingSession?.started_at
+          ? Date.parse(existingSession.started_at)
+          : NaN;
+        const durationSeconds = Number.isFinite(startedMs)
+          ? Math.max(0, Math.round((Date.now() - startedMs) / 1000))
+          : null;
+
+        const updatePayload: Record<string, unknown> = {
+          status: "completed",
+          ended_at: endedAtIso,
+        };
+
+        if (durationSeconds !== null) {
+          updatePayload.duration_seconds = durationSeconds;
+        }
+
         await supabase
           .from("sessions")
-          .update({
-            status: "completed",
-            ended_at: new Date().toISOString(),
-          })
+          .update(updatePayload)
           .eq("vapi_call_id", callId);
       }
       break;

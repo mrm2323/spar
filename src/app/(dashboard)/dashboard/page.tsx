@@ -27,6 +27,13 @@ interface PatternInsight {
   total_sessions: number;
 }
 
+interface SessionCapStatus {
+  capSeconds: number;
+  usedSeconds: number;
+  remainingSeconds: number;
+  nextResetTime?: string;
+}
+
 function relativeSessionTime(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
@@ -60,6 +67,8 @@ function DashboardInner() {
   const [files, setFiles] = useState<ProcessedFile[]>([]);
   const [fileProcessing, setFileProcessing] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [startError, setStartError] = useState<string | null>(null);
+  const [capStatus, setCapStatus] = useState<SessionCapStatus | null>(null);
   const [memorySnippet, setMemorySnippet] = useState<string | null>(null);
   // const [phone, setPhone] = useState("");
   // const [phoneSaved, setPhoneSaved] = useState(false);
@@ -77,29 +86,45 @@ function DashboardInner() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ resumeSessionId: rid, context: null }),
     })
-      .then((res) => res.json())
+      .then(async (res) => ({ res, data: await res.json().catch(() => ({})) }))
       .then(
-        (data: {
+        ({ res, data }: {
+          res: Response;
+          data: {
           sessionId?: string;
           systemPrompt?: string;
           firstMessage?: string;
+          maxDurationSeconds?: number;
+          cap?: SessionCapStatus;
+          error?: string;
+          message?: string;
+        };
         }) => {
-          if (data.sessionId && data.systemPrompt) {
+          if (res.ok && data.sessionId && data.systemPrompt) {
             sessionStorage.setItem(
               `spar_session_${data.sessionId}`,
               JSON.stringify({
                 systemPrompt: data.systemPrompt,
                 firstMessage: data.firstMessage,
+                maxDurationSeconds: data.maxDurationSeconds,
+                cap: data.cap,
               })
             );
             router.replace(`/session/${data.sessionId}`);
           } else {
+            if (data.cap) setCapStatus(data.cap);
+            setStartError(
+              data.message ||
+                data.error ||
+                "Could not start another session right now."
+            );
             setLoading(false);
             resumeHandledRef.current = false;
           }
         }
       )
       .catch(() => {
+        setStartError("Could not start another session right now.");
         setLoading(false);
         resumeHandledRef.current = false;
       });
@@ -111,6 +136,7 @@ function DashboardInner() {
       .then((data) => {
         if (data.sessions) setSessions(data.sessions);
         if (data.pattern) setPattern(data.pattern);
+        if (data.cap) setCapStatus(data.cap);
       })
       .catch(() => {});
 
@@ -207,6 +233,7 @@ function DashboardInner() {
 
   async function startSession() {
     setLoading(true);
+    setStartError(null);
     trackEvent("session_start_clicked", {
       source: "dashboard",
       has_context: Boolean(context.trim()),
@@ -228,7 +255,7 @@ function DashboardInner() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ context: fullContext || null }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.sessionId) {
         console.error("Session start failed:", data);
         trackEvent("session_start_failed", {
@@ -236,6 +263,12 @@ function DashboardInner() {
           status: res.status,
           error: data?.error || "unknown",
         });
+        if (data?.cap) setCapStatus(data.cap);
+        setStartError(
+          data?.message ||
+            data?.error ||
+            "Could not start another session right now."
+        );
         setLoading(false);
         return;
       }
@@ -248,6 +281,8 @@ function DashboardInner() {
         JSON.stringify({
           systemPrompt: data.systemPrompt,
           firstMessage: data.firstMessage,
+          maxDurationSeconds: data.maxDurationSeconds,
+          cap: data.cap,
         })
       );
       router.push(`/session/${data.sessionId}`);
@@ -257,6 +292,7 @@ function DashboardInner() {
         status: 0,
         error: "network_or_unknown",
       });
+      setStartError("Could not start another session right now.");
       setLoading(false);
     }
   }
@@ -300,6 +336,25 @@ function DashboardInner() {
                   : "Kabir is building your history as you practice."}
             </p>
           )}
+
+          {capStatus ? (
+            <div className="mx-auto mt-3 max-w-lg space-y-1 text-center">
+              <p className="text-xs text-cyan-300/80">
+                Free launch practice left: {Math.floor(capStatus.remainingSeconds / 60)} min {String(capStatus.remainingSeconds % 60).padStart(2, "0")} sec
+              </p>
+              {capStatus.nextResetTime && (
+                <p className="text-[10px] text-slate-400">
+                  Resets at 10:00 AM UTC tomorrow
+                </p>
+              )}
+            </div>
+          ) : null}
+
+          {startError ? (
+            <p className="mx-auto mt-2 max-w-lg text-center text-xs text-amber-300/90">
+              {startError}
+            </p>
+          ) : null}
 
           <h1 className="text-2xl font-semibold tracking-tight">
             {loading
