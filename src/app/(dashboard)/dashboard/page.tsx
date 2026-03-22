@@ -10,6 +10,7 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
+import { trackEvent } from "@/lib/analytics";
 
 interface PastSession {
   id: string;
@@ -18,6 +19,7 @@ interface PastSession {
   duration_seconds: number | null;
   notes_preview?: string | null;
   confidence?: number | null;
+  thread_attempts?: number;
 }
 
 interface PatternInsight {
@@ -57,6 +59,7 @@ function DashboardInner() {
   const [pattern, setPattern] = useState<PatternInsight | null>(null);
   const [files, setFiles] = useState<ProcessedFile[]>([]);
   const [fileProcessing, setFileProcessing] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
   const [memorySnippet, setMemorySnippet] = useState<string | null>(null);
   // const [phone, setPhone] = useState("");
   // const [phoneSaved, setPhoneSaved] = useState(false);
@@ -143,7 +146,13 @@ function DashboardInner() {
       const file = e.target.files?.[0];
       if (!file) return;
 
+      setFileError(null);
       setFileProcessing(true);
+      trackEvent("attachment_upload_started", {
+        source: "dashboard",
+        file_name: file.name,
+        file_type: file.type || "unknown",
+      });
       try {
         const formData = new FormData();
         formData.append("file", file);
@@ -154,7 +163,21 @@ function DashboardInner() {
         });
         const data = await res.json();
 
+        if (!res.ok) {
+          trackEvent("attachment_upload_failed", {
+            source: "dashboard",
+            status: res.status,
+            error: data?.error || "unknown",
+          });
+          setFileError(data?.error || "Could not process this file");
+          return;
+        }
+
         if (data.text) {
+          trackEvent("attachment_upload_succeeded", {
+            source: "dashboard",
+            file_name: data.fileName || file.name,
+          });
           setFiles((prev) => [
             ...prev,
             { name: data.fileName || file.name, text: data.text },
@@ -162,9 +185,16 @@ function DashboardInner() {
         }
       } catch (err) {
         console.error("File processing failed:", err);
+        trackEvent("attachment_upload_failed", {
+          source: "dashboard",
+          status: 0,
+          error: "network_or_unknown",
+        });
+        setFileError("Upload failed. Please try again.");
+      } finally {
+        setFileProcessing(false);
+        if (fileInputRef.current) fileInputRef.current.value = "";
       }
-      setFileProcessing(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
     },
     []
   );
@@ -177,6 +207,11 @@ function DashboardInner() {
 
   async function startSession() {
     setLoading(true);
+    trackEvent("session_start_clicked", {
+      source: "dashboard",
+      has_context: Boolean(context.trim()),
+      attached_files_count: files.length,
+    });
     try {
       let fullContext = context.trim() || "";
       if (files.length > 0) {
@@ -196,9 +231,18 @@ function DashboardInner() {
       const data = await res.json();
       if (!res.ok || !data.sessionId) {
         console.error("Session start failed:", data);
+        trackEvent("session_start_failed", {
+          source: "dashboard",
+          status: res.status,
+          error: data?.error || "unknown",
+        });
         setLoading(false);
         return;
       }
+      trackEvent("session_start_succeeded", {
+        source: "dashboard",
+        session_id: data.sessionId,
+      });
       sessionStorage.setItem(
         `spar_session_${data.sessionId}`,
         JSON.stringify({
@@ -208,6 +252,11 @@ function DashboardInner() {
       );
       router.push(`/session/${data.sessionId}`);
     } catch {
+      trackEvent("session_start_failed", {
+        source: "dashboard",
+        status: 0,
+        error: "network_or_unknown",
+      });
       setLoading(false);
     }
   }
@@ -325,6 +374,10 @@ function DashboardInner() {
                     )}
                     {fileProcessing ? "Processing..." : "Attach a file"}
                   </button>
+
+                  {fileError ? (
+                    <p className="mt-2 text-xs text-red-400">{fileError}</p>
+                  ) : null}
                 </div>
               )}
             </div>
@@ -337,7 +390,7 @@ function DashboardInner() {
         {sessions.length > 0 ? (
           <>
             <h2 className="mb-5 text-xs font-medium uppercase tracking-widest text-slate-400">
-              Your sessions with Kabir
+              Your conversation threads
             </h2>
             <div className="space-y-3">
               {visibleSessions.map((session) => (
@@ -348,9 +401,16 @@ function DashboardInner() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
-                      <p className="font-mono text-[10px] uppercase tracking-wider text-slate-400">
-                        {relativeSessionTime(session.ended_at)}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-mono text-[10px] uppercase tracking-wider text-slate-400">
+                          {relativeSessionTime(session.ended_at)}
+                        </p>
+                        {(session.thread_attempts || 1) > 1 ? (
+                          <span className="rounded border border-cyan-500/40 bg-cyan-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-cyan-200">
+                            {session.thread_attempts} attempts
+                          </span>
+                        ) : null}
+                      </div>
                       <p className="mt-1 line-clamp-2 text-sm text-slate-100">
                         {session.notes_preview ||
                           session.context ||
@@ -395,71 +455,6 @@ function DashboardInner() {
         </div>
       )}
 
-      {/*
-      Phone section intentionally commented out. Keep this code to restore quickly.
-      <div className="mt-10 border-t border-slate-800/70 pt-8">
-        <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-widest text-slate-500">
-          <Phone className="h-3 w-3" />
-          Call Kabir by phone
-        </div>
-        {linkedPhone ? (
-          <p className="mt-3 text-sm text-slate-400">
-            Your phone{" "}
-            <span className="text-slate-200">{linkedPhone}</span> is linked.
-            Phone sessions appear in your list above.
-          </p>
-        ) : (
-          <div className="mt-3">
-            <p className="mb-3 text-sm text-slate-400">
-              Link your number so phone calls show up here with notes.
-            </p>
-            <div className="flex max-w-xs items-center gap-2">
-              <input
-                type="tel"
-                value={phone}
-                onChange={(e) => {
-                  setPhone(e.target.value);
-                  setPhoneSaved(false);
-                }}
-                placeholder="+1 (555) 123-4567"
-                className="flex-1 rounded-lg border border-slate-700/55 bg-slate-900/55 px-3 py-2 text-sm text-white placeholder-slate-500 outline-none focus:border-cyan-500/60"
-              />
-              <button
-                type="button"
-                onClick={async () => {
-                  if (!phone.trim()) return;
-                  const res = await fetch("/api/user/phone", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ phone }),
-                  });
-                  const data = await res.json();
-                  if (data.success) {
-                    setLinkedPhone(data.phone);
-                    setPhoneSaved(true);
-                    fetch("/api/sessions")
-                      .then((r) => r.json())
-                      .then((d) => {
-                        if (d.sessions) setSessions(d.sessions);
-                        if (d.pattern) setPattern(d.pattern);
-                      })
-                      .catch(() => {});
-                  }
-                }}
-                disabled={phoneSaved}
-                className="rounded-lg border border-slate-600/70 px-3 py-2 text-sm text-slate-300 hover:border-cyan-500/60 hover:text-white disabled:opacity-50"
-              >
-                {phoneSaved ? (
-                  <Check className="h-4 w-4 text-emerald-500" />
-                ) : (
-                  "Link"
-                )}
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-      */}
     </div>
   );
 }

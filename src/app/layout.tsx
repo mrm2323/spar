@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
 import { DM_Sans, IBM_Plex_Mono } from "next/font/google";
+import { AmplitudeBootstrap } from "@/components/analytics/AmplitudeBootstrap";
 import "./globals.css";
 
 const dmSans = DM_Sans({
@@ -33,6 +34,7 @@ export default function RootLayout({
           className={`${dmSans.variable} ${ibmMono.variable} font-sans antialiased bg-[#0A0A0F] text-zinc-50`}
           suppressHydrationWarning
         >
+          <AmplitudeBootstrap />
           {children}
         </body>
       </html>

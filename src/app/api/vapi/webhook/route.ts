@@ -7,6 +7,65 @@ import memoryService from "@/services/memory";
 import { getMemoryPreference } from "@/lib/memory/preferences";
 import { NextResponse } from "next/server";
 
+function shouldDropTranscriptMessage(content: string): boolean {
+  const text = content.trim();
+  if (!text) return true;
+
+  // Vapi can include full system-prompt/config payload in artifact.messages.
+  if (
+    text.includes("You are Kabir.") ||
+    text.includes("WHAT YOU KNOW ABOUT THIS PERSON") ||
+    text.includes("HOW YOU HELP") ||
+    text.includes("NEVER DO THESE THINGS") ||
+    text.includes("CONTINUING WHERE YOU LEFT OFF")
+  ) {
+    return true;
+  }
+
+  // Filter non-conversational giant blobs.
+  if (text.length > 2200 && (text.includes("========================") || text.includes("\\n- "))) {
+    return true;
+  }
+
+  return false;
+}
+
+function sanitizeTranscript(transcript: unknown): unknown {
+  if (!Array.isArray(transcript)) return transcript;
+
+  const cleaned = transcript
+    .map((row) => {
+      const item = row as Record<string, unknown>;
+      const role =
+        typeof item.role === "string"
+          ? item.role
+          : typeof item.speaker === "string"
+            ? item.speaker
+            : "";
+      const content =
+        typeof item.message === "string"
+          ? item.message
+          : typeof item.content === "string"
+            ? item.content
+            : typeof item.text === "string"
+              ? item.text
+              : "";
+
+      if (shouldDropTranscriptMessage(content)) return null;
+
+      return {
+        role,
+        content,
+        time: item.time,
+        endTime: item.endTime,
+        secondsFromStart: item.secondsFromStart,
+      };
+    })
+    .filter((row): row is Record<string, unknown> => row !== null);
+
+  return cleaned;
+}
+
 function toMemoryMessages(transcript: unknown): Array<{ role: string; content: string }> {
   if (!Array.isArray(transcript)) return [];
   return transcript
@@ -150,8 +209,9 @@ export async function POST(req: Request) {
 
       // FIX: Vapi sends transcript inside artifact, not at top level
       const artifact = msg.artifact || {};
-      const transcript =
+      const rawTranscript =
         artifact.messages || artifact.transcript || msg.transcript || null;
+      const transcript = sanitizeTranscript(rawTranscript);
       const hasTranscript = Array.isArray(transcript)
         ? transcript.length > 0
         : typeof transcript === "string"

@@ -17,7 +17,10 @@ const FILLER_WORDS = new Set([
 
 export type TranscriptMessage = {
   role?: string;
+  speaker?: string;
   content?: string;
+  message?: string;
+  text?: string;
 };
 
 function normalizeTranscript(
@@ -55,6 +58,21 @@ function isAssistantRole(role: string | undefined): boolean {
   );
 }
 
+function isPromptArtifact(text: string): boolean {
+  const t = text.trim();
+  if (!t) return true;
+  if (
+    t.includes("You are Kabir.") ||
+    t.includes("WHAT YOU KNOW ABOUT THIS PERSON") ||
+    t.includes("HOW YOU HELP") ||
+    t.includes("NEVER DO THESE THINGS") ||
+    t.includes("CONTINUING WHERE YOU LEFT OFF")
+  ) {
+    return true;
+  }
+  return t.length > 2200 && (t.includes("========================") || t.includes("\\n- "));
+}
+
 export function computeTranscriptStats(transcript: unknown): {
   userWordCount: number;
   assistantWordCount: number;
@@ -78,10 +96,11 @@ export function computeTranscriptStats(transcript: unknown): {
   }
 
   for (const m of messages) {
-    const text = (m.content || "").trim();
-    if (!text) continue;
+    const text = String(m.content || m.message || m.text || "").trim();
+    if (!text || isPromptArtifact(text)) continue;
+    const role = m.role || m.speaker;
     const words = text.toLowerCase().split(/\s+/).filter(Boolean);
-    if (isUserRole(m.role)) {
+    if (isUserRole(role)) {
       userWords += words.length;
       for (const w of words) {
         const clean = w.replace(/[^a-z']/g, "");
@@ -89,7 +108,7 @@ export function computeTranscriptStats(transcript: unknown): {
           fillerCounts.set(clean, (fillerCounts.get(clean) || 0) + 1);
         }
       }
-    } else if (isAssistantRole(m.role)) {
+    } else if (isAssistantRole(role)) {
       assistantWords += words.length;
     }
   }

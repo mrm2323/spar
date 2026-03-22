@@ -11,6 +11,7 @@ import {
   type TranscriptMessage,
 } from "@/lib/transcript-stats";
 import { SessionOutcomeFollowUp } from "./session-outcome-followup";
+import { trackEvent } from "@/lib/analytics";
 
 interface NotesData {
   overall_score?: number;
@@ -32,12 +33,57 @@ function formatDurationDetailed(seconds: number | null | undefined): string {
 }
 
 function normalizeMessages(transcript: unknown): TranscriptMessage[] {
+  const shouldDrop = (content: string) => {
+    const text = content.trim();
+    if (!text) return true;
+    if (
+      text.includes("You are Kabir.") ||
+      text.includes("WHAT YOU KNOW ABOUT THIS PERSON") ||
+      text.includes("HOW YOU HELP") ||
+      text.includes("NEVER DO THESE THINGS") ||
+      text.includes("CONTINUING WHERE YOU LEFT OFF")
+    ) {
+      return true;
+    }
+    if (text.length > 2200 && (text.includes("========================") || text.includes("\\n- "))) {
+      return true;
+    }
+    return false;
+  };
+
   if (!transcript) return [];
-  if (Array.isArray(transcript)) return transcript as TranscriptMessage[];
+  if (Array.isArray(transcript)) {
+    return transcript
+      .map((m) => {
+        const row = m as Record<string, unknown>;
+        const roleRaw =
+          typeof row.role === "string"
+            ? row.role
+            : typeof row.speaker === "string"
+              ? row.speaker
+              : "";
+        const contentRaw =
+          typeof row.content === "string"
+            ? row.content
+            : typeof row.message === "string"
+              ? row.message
+              : typeof row.text === "string"
+                ? row.text
+                : "";
+        return {
+          role: roleRaw,
+          content: contentRaw,
+        };
+      })
+      .filter((m) => {
+        const text = (m.content || "").trim();
+        return text.length > 0 && !shouldDrop(text);
+      });
+  }
   if (typeof transcript === "string") {
     try {
       const p = JSON.parse(transcript) as unknown;
-      if (Array.isArray(p)) return p as TranscriptMessage[];
+      if (Array.isArray(p)) return normalizeMessages(p);
     } catch {
       return [];
     }
@@ -97,9 +143,11 @@ export function NotesClient({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [continuing, setContinuing] = useState(false);
+  const [restarting, setRestarting] = useState(false);
 
   async function continuePractice() {
     setContinuing(true);
+    trackEvent("session_continue_clicked", { session_id: sessionId });
     try {
       const res = await fetch("/api/session/start", {
         method: "POST",
@@ -112,9 +160,18 @@ export function NotesClient({
       const data = await res.json();
       if (!res.ok || !data.sessionId) {
         console.error("Continue session failed:", data);
+        trackEvent("session_continue_failed", {
+          session_id: sessionId,
+          status: res.status,
+          error: data?.error || "unknown",
+        });
         setContinuing(false);
         return;
       }
+      trackEvent("session_continue_succeeded", {
+        previous_session_id: sessionId,
+        session_id: data.sessionId,
+      });
       sessionStorage.setItem(
         `spar_session_${data.sessionId}`,
         JSON.stringify({
@@ -126,7 +183,60 @@ export function NotesClient({
       );
       router.push(`/session/${data.sessionId}`);
     } catch {
+      trackEvent("session_continue_failed", {
+        session_id: sessionId,
+        status: 0,
+        error: "network_or_unknown",
+      });
       setContinuing(false);
+    }
+  }
+
+  async function restartPractice() {
+    setRestarting(true);
+    trackEvent("session_restart_clicked", { session_id: sessionId });
+    try {
+      const res = await fetch("/api/session/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "restart",
+          referenceSessionId: sessionId,
+          context: null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.sessionId) {
+        console.error("Restart session failed:", data);
+        trackEvent("session_restart_failed", {
+          session_id: sessionId,
+          status: res.status,
+          error: data?.error || "unknown",
+        });
+        setRestarting(false);
+        return;
+      }
+      trackEvent("session_restart_succeeded", {
+        previous_session_id: sessionId,
+        session_id: data.sessionId,
+      });
+      sessionStorage.setItem(
+        `spar_session_${data.sessionId}`,
+        JSON.stringify({
+          systemPrompt: data.systemPrompt,
+          firstMessage:
+            data.firstMessage ||
+            "Hey. Let's run this from the top. Give me your opening line when you're ready.",
+        })
+      );
+      router.push(`/session/${data.sessionId}`);
+    } catch {
+      trackEvent("session_restart_failed", {
+        session_id: sessionId,
+        status: 0,
+        error: "network_or_unknown",
+      });
+      setRestarting(false);
     }
   }
 
@@ -207,21 +317,49 @@ export function NotesClient({
   }, [sessionId, attempt, notes]);
 
   useEffect(() => {
-    if (!session && !loading) {
+    if (loading || session?.transcript) return;
+
+    let cancelled = false;
+    let attempts = 0;
+
+    const refreshSession = () => {
       fetch(`/api/session/${sessionId}`)
         .then((r) => r.json())
         .then((d) => {
-          if (d.session) {
-            setSession({
-              duration_seconds: d.session.duration_seconds,
-              transcript: d.session.transcript,
-              ended_at: d.session.ended_at,
-            });
+          if (cancelled || !d.session) return;
+
+          const next = {
+            duration_seconds: d.session.duration_seconds,
+            transcript: d.session.transcript,
+            ended_at: d.session.ended_at,
+          };
+          setSession(next);
+
+          const hasTranscript =
+            Array.isArray(next.transcript) ||
+            (typeof next.transcript === "string" &&
+              next.transcript.trim().length > 0);
+          if (hasTranscript) return;
+
+          attempts += 1;
+          if (attempts < 6) {
+            window.setTimeout(refreshSession, 1500);
           }
         })
-        .catch(() => {});
-    }
-  }, [sessionId, session, loading]);
+        .catch(() => {
+          attempts += 1;
+          if (!cancelled && attempts < 6) {
+            window.setTimeout(refreshSession, 1500);
+          }
+        });
+    };
+
+    refreshSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, session?.transcript, loading]);
 
   const stats = useMemo(
     () => computeTranscriptStats(session?.transcript),
@@ -440,7 +578,9 @@ export function NotesClient({
                   Talk time
                 </p>
                 <p className="mt-1 text-[#E2E8F0]">
-                  You: {stats.userRatio}% / Kabir: {stats.assistantRatio}%
+                  {messages.length === 0
+                    ? "No transcript yet"
+                    : `You: ${stats.userRatio}% / Kabir: ${stats.assistantRatio}%`}
                 </p>
               </div>
               <div>
@@ -516,13 +656,15 @@ export function NotesClient({
 
         {/* SECTION 6 */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <Link
-            href="/dashboard"
+          <button
+            type="button"
+            disabled={restarting}
+            onClick={restartPractice}
             className="inline-flex flex-1 items-center justify-center gap-2 rounded border border-emerald-600/80 bg-emerald-600/20 px-5 py-3 text-center text-sm font-medium text-emerald-100 hover:bg-emerald-600/30"
           >
             <Mic className="h-4 w-4" />
-            Practice again
-          </Link>
+            {restarting ? "Starting…" : "Practice again"}
+          </button>
           <button
             type="button"
             disabled={continuing}
@@ -539,15 +681,11 @@ export function NotesClient({
           initialSubmitted={initialOutcomeSubmitted}
         />
 
-        <p className="text-center text-[11px] text-slate-500">
-          Your conversations are encrypted and never shared.
-        </p>
-
         <button
           type="button"
           onClick={handleDelete}
           disabled={deleting}
-          className="w-full text-center text-xs text-slate-500 underline hover:text-slate-300 disabled:opacity-50"
+          className="mt-2 w-full text-center text-xs text-slate-500 underline hover:text-slate-300 disabled:opacity-50"
         >
           {deleting ? "Deleting…" : "Delete this session"}
         </button>

@@ -15,7 +15,7 @@ export default function DashboardLayout({
       <nav className="fixed top-0 z-50 w-full border-b border-slate-800/70 bg-[#050c1d]/80 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-6">
           <Link
-            href="/dashboard"
+            href="/"
             className="text-lg font-semibold tracking-tight text-cyan-300"
           >
             spar

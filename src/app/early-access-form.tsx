@@ -21,7 +21,7 @@ export function EarlyAccessForm() {
       formData.append("email", email);
 
       // Submit directly so we don't navigate away to Formspree.
-      await fetch("https://formspree.io/f/maqpbppn", {
+      const res = await fetch("https://formspree.io/f/maqpbppn", {
         method: "POST",
         body: formData,
         headers: {
@@ -29,8 +29,12 @@ export function EarlyAccessForm() {
         },
       });
 
+      if (!res.ok) {
+        throw new Error("Could not submit right now");
+      }
+
       setStatus("success");
-      router.push("/dashboard");
+      router.push(`/sign-up?email=${encodeURIComponent(email)}`);
     } catch (err) {
       setStatus("error");
       setError(err instanceof Error ? err.message : "Failed to submit");
@@ -67,7 +71,7 @@ export function EarlyAccessForm() {
         >
           {status === "submitting"
             ? "Sending…"
-            : "Start practicing free"}
+            : "Create account"}
         </button>
       </form>
       <p className="mt-3 text-xs text-slate-500">

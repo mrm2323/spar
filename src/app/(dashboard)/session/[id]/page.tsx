@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Paperclip, Loader2, Check } from "lucide-react";
 import Vapi from "@vapi-ai/web";
+import { trackEvent } from "@/lib/analytics";
 
 type SessionStatus =
   | "trust"
@@ -25,6 +26,8 @@ export default function SessionPage() {
   const [attachStatus, setAttachStatus] = useState<
     "idle" | "processing" | "done"
   >("idle");
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const [ending, setEnding] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const vapiRef = useRef<Vapi | null>(null);
   const callIdRef = useRef<string | null>(null);
@@ -105,13 +108,13 @@ export default function SessionPage() {
           "Hey. It's Kabir. What conversation are you looking forward to?",
         maxDurationSeconds: 600,
         startSpeakingPlan: {
-          waitSeconds: 0.6,
+          waitSeconds: 0.3,
           smartEndpointingEnabled: true,
         },
         stopSpeakingPlan: {
           numWords: 1,
-          voiceSeconds: 0.2,
-          backoffSeconds: 1.5,
+          voiceSeconds: 0.08,
+          backoffSeconds: 0.35,
         },
       })
       .then(async (call) => {
@@ -150,7 +153,14 @@ export default function SessionPage() {
       const file = e.target.files?.[0];
       if (!file || !vapiRef.current) return;
 
+      setAttachError(null);
       setAttachStatus("processing");
+      trackEvent("attachment_upload_started", {
+        source: "session",
+        session_id: id,
+        file_name: file.name,
+        file_type: file.type || "unknown",
+      });
 
       try {
         const formData = new FormData();
@@ -162,6 +172,18 @@ export default function SessionPage() {
         });
         const data = await res.json();
 
+        if (!res.ok) {
+          setAttachStatus("idle");
+          setAttachError(data?.error || "Could not process this file.");
+          trackEvent("attachment_upload_failed", {
+            source: "session",
+            session_id: id,
+            status: res.status,
+            error: data?.error || "unknown",
+          });
+          return;
+        }
+
         if (data.text && vapiRef.current) {
           vapiRef.current.send({
             type: "add-message",
@@ -171,21 +193,40 @@ export default function SessionPage() {
             },
           });
           setAttachStatus("done");
+          trackEvent("attachment_upload_succeeded", {
+            source: "session",
+            session_id: id,
+            file_name: file.name,
+          });
           setTimeout(() => setAttachStatus("idle"), 3000);
         }
       } catch (err) {
         console.error("File upload failed:", err);
+        trackEvent("attachment_upload_failed", {
+          source: "session",
+          session_id: id,
+          status: 0,
+          error: "network_or_unknown",
+        });
+        setAttachError("Upload failed. Please try a smaller file.");
         setAttachStatus("idle");
       }
 
       if (fileInputRef.current) fileInputRef.current.value = "";
     },
-    []
+    [id]
   );
 
   const endSession = useCallback(async () => {
     if (endingRef.current) return;
     endingRef.current = true;
+    trackEvent("session_end_clicked", {
+      session_id: id,
+      speaking_state: speaking,
+      elapsed_seconds: elapsed,
+    });
+    setEnding(true);
+    setSpeaking("idle");
 
     if (vapiRef.current) vapiRef.current.stop();
     setStatus("ended");
@@ -209,17 +250,26 @@ export default function SessionPage() {
         throw new Error(reason);
       }
 
+      trackEvent("session_end_succeeded", {
+        session_id: id,
+      });
+
       sessionStorage.removeItem(`spar_session_${id}`);
       setTimeout(() => router.push(`/notes/${id}`), 2500);
     } catch (error) {
       console.error("End session failed:", error);
+      trackEvent("session_end_failed", {
+        session_id: id,
+        error: error instanceof Error ? error.message : "unknown",
+      });
       endingRef.current = false;
+      setEnding(false);
       setStatus("error");
       setErrorMsg(
         `Could not end this session: ${error instanceof Error ? error.message : "unknown error"}`
       );
     }
-  }, [id, router]);
+  }, [id, router, speaking, elapsed]);
 
   const formatTime = (s: number) => {
     const m = Math.floor(s / 60);
@@ -294,7 +344,7 @@ export default function SessionPage() {
 
       {status === "active" && (
         <>
-          <div className="mb-4 flex items-center gap-1">
+          <div className="mb-5 flex items-center gap-1.5">
             {Array.from({ length: 5 }).map((_, i) => (
               <div
                 key={i}
@@ -304,18 +354,18 @@ export default function SessionPage() {
                     : "bg-slate-600"
                 }`}
                 style={{
-                  height: speaking === "kabir" ? `${16 + (i % 3) * 6}px` : "8px",
+                  height: speaking === "kabir" ? `${20 + (i % 3) * 7}px` : "10px",
                   animationDelay: `${i * 0.1}s`,
                 }}
               />
             ))}
           </div>
 
-          <p className="text-sm text-slate-400">
+          <p className="text-base font-medium text-slate-300">
             {speaking === "kabir" ? "Kabir is speaking..." : "Listening..."}
           </p>
 
-          <p className="mt-2 font-mono text-xs text-slate-500">
+          <p className="mt-2 font-mono text-sm text-slate-400">
             {formatTime(elapsed)}
           </p>
 
@@ -327,7 +377,7 @@ export default function SessionPage() {
             className="hidden"
           />
 
-          <div className="fixed bottom-8 left-1/2 flex -translate-x-1/2 items-center gap-6">
+          <div className="fixed bottom-24 left-1/2 flex -translate-x-1/2 items-center gap-6 rounded-full border border-slate-700/60 bg-slate-950/70 px-4 py-2 backdrop-blur">
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={attachStatus === "processing"}
@@ -349,11 +399,18 @@ export default function SessionPage() {
 
             <button
               onClick={endSession}
-              className="text-xs text-slate-500 transition-colors hover:text-slate-300"
+              disabled={ending}
+              className="rounded bg-rose-500/85 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-70"
             >
-              End session
+              {ending ? "Ending..." : "End session"}
             </button>
           </div>
+
+          {attachError ? (
+            <p className="fixed bottom-14 left-1/2 -translate-x-1/2 text-center text-xs text-red-400">
+              {attachError}
+            </p>
+          ) : null}
         </>
       )}
     </div>

@@ -164,8 +164,18 @@ export default function MemorySettingsPage() {
 
         <div className="mt-4 flex items-center justify-between gap-4 rounded-lg border border-slate-700/60 bg-slate-900/30 px-4 py-3">
           <div>
-            <p className="text-sm font-medium text-slate-100">Use memory in coaching</p>
-            <p className="text-xs text-slate-400">When off, Kabir will not pull memory context into prompts.</p>
+            <p className="text-sm font-medium text-slate-100">
+              Use memory in coaching
+              <span className="ml-2 rounded border border-cyan-500/40 bg-cyan-500/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-cyan-200">
+                Recommended
+              </span>
+            </p>
+            <p className="mt-1 text-xs text-slate-400">
+              When turned off, Kabir still works, but he will not use past memory to personalize coaching.
+            </p>
+            <p className="mt-1 text-[11px] text-slate-500">
+              Current state: {enabled ? "On - personalized coaching" : "Off - fresh-session coaching"}
+            </p>
           </div>
           <button
             type="button"
@@ -173,11 +183,11 @@ export default function MemorySettingsPage() {
             onClick={() => savePreference(!enabled)}
             className={`rounded-md px-3 py-1.5 text-xs font-semibold ${
               enabled
-                ? "bg-cyan-500/20 text-cyan-200 border border-cyan-500/50"
-                : "bg-slate-800 text-slate-300 border border-slate-600"
+                ? "border border-cyan-500/50 bg-cyan-500/20 text-cyan-200"
+                : "border border-slate-600 bg-slate-800 text-slate-300"
             }`}
           >
-            {enabled ? "Enabled" : "Disabled"}
+            {enabled ? "On" : "Off"}
           </button>
         </div>
 
