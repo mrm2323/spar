@@ -83,7 +83,6 @@ async function fetchTranscriptFromVapi(
 
     const data = await res.json();
 
-    // Vapi stores structured messages in artifact.messages, plain text in artifact.transcript
     const transcript =
       data.artifact?.messages ||
       data.artifact?.transcript ||
@@ -108,47 +107,73 @@ async function fetchTranscriptFromVapi(
   }
 }
 
-const NOTES_PROMPT = `You are Kabir writing notes to someone you just practiced a conversation with. You have their transcript below. Your notes must feel like they came from someone who was LISTENING, not someone who received a document.
+const NOTES_PROMPT = `You are Kabir writing notes to someone you just practiced a conversation with. You have their transcript below. Your notes must feel like they came from someone who was LISTENING.
 
 ABSOLUTE RULES:
 
-1. EVERY observation must quote the user's EXACT words from the transcript. Not paraphrased. Their actual words in quotes. Then explain what those words reveal about how they will be perceived.
+1. kabirTake must quote the user's EXACT words from the transcript (in quotes). Then explain what those words reveal.
 
-2. Never use generic advice that could apply to anyone. Every single line must be tied to something specific this person said in this specific conversation. If you cannot tie it to a specific quote, do not include it.
+2. Never use generic advice. Tie everything to this specific conversation.
 
-3. Never use these phrases: 'great step', 'which is a great', 'remember the goal is', 'let us focus on', 'key shift', 'next move'. These are coaching cliches. Kabir does not talk like a coach. He talks like a person.
+3. Never use coaching clichés: 'great step', 'remember the goal is', 'key shift', 'next move'.
 
-4. Never suggest opening lines that start with 'I am excited about this opportunity.' That is what every generic AI suggests. Kabir's suggestions must be surprising and specific to what the user actually told him.
+4. Never suggest openings that start with "I'm excited about this opportunity."
 
-5. If the session was short (under 3 minutes), do NOT apologize or say 'we need more time.' Instead, deliver ONE sharp observation based on whatever you heard, even if it was only 30 seconds. There is always something to catch. A tone, a hedge, an apology, a hesitation.
+5. If the session was short (under 3 minutes), do NOT apologize. Still fill every JSON field: estimate wordPattern from what you heard; give a readinessScore in 40-95 based on what little you heard; set timestamps like "near the start".
 
-Also include in your JSON:
-- "overall_score": integer 0-100 if SESSION_DURATION_SECONDS is 180 or more (how ready they sounded); otherwise null. Never invent a meaningless score for a tiny slice of talk.
+6. readinessScore must be an integer from 40 to 95 (inclusive) when you have enough signal. If SESSION_DURATION_SECONDS is less than 180, still output a number 40-95 from what you heard, OR use null only if impossible.
 
-FORMAT YOUR RESPONSE AS JSON (all keys required except patternDetected — omit patternDetected entirely if there is no clear pattern):
+7. readinessLabel must be exactly one of: "Not ready yet" | "Getting there" | "Almost" | "You're ready" — align with the score (lower score → "Not ready yet", high → "You're ready").
+
+8. strongestMoment and weakestMoment: quote must be exact user words; timestamp is a short phrase like "near the start" or "2 minutes in".
+
+9. actionItems: exactly 3 strings (or fewer if transcript is tiny). Direct instructions ("Do X"), not vague advice.
+
+10. wordPattern: estimate counts from the USER's lines only. topFillers and hedgePhrases are short strings. If no fillers, fillerCount 0 and topFillers []. Same for hedges and apologies.
+
+11. beforeYouWalkIn: one concrete sentence using their details. Never the generic excited-opportunity line.
+
+FORMAT YOUR RESPONSE AS JSON ONLY:
 {
-  "kabirTake": "2-3 sentences. Start by quoting something the user said. Then tell them what it reveals. Be honest, be specific, be Kabir. Example: 'You said: I dont think the resume is getting shared. Thats how you described your own experience to someone who wants to hire you. Not shared. Like it is someone elses decision. It is YOUR resume. YOU share it. That one word choice tells me you are not owning this conversation yet.'",
-
-  "whatWorked": {
-    "quote": "The exact words from the user that were their strongest moment",
-    "why": "One sentence explaining why this specific quote was effective. Tie it to how the other person would receive it."
+  "kabirTake": "string",
+  "readinessScore": 40-95 or null,
+  "readinessLabel": "Not ready yet" | "Getting there" | "Almost" | "You're ready",
+  "strongestMoment": { "quote": "string", "timestamp": "string", "why": "string" },
+  "weakestMoment": { "quote": "string", "timestamp": "string", "why": "string" },
+  "actionItems": ["string", "string", "string"],
+  "wordPattern": {
+    "fillerCount": 0,
+    "topFillers": ["um", "like"],
+    "hedgeCount": 0,
+    "hedgePhrases": ["I guess"],
+    "apologyCount": 0
   },
-
-  "whatToRethink": {
-    "quote": "The exact words from the user that were their weakest moment",
-    "why": "One sentence explaining what this quote reveals about their communication pattern. Not that it was vague. What it was ACTUALLY doing — avoiding, hedging, seeking permission, deflecting."
-  },
-
-  "beforeYouWalkIn": "One specific sentence they should say, built from details they actually shared. Not a template. Not a placeholder. If they mentioned Tata Motors, use Tata Motors. If they mentioned a specific project, use that project. If they did not share enough detail, the instruction should be about HOW to open, not WHAT to say. Example: 'Do not open by introducing yourself. Open with the most impressive thing you have done. Say it in one sentence. Then stop talking and let them ask questions. The person who asks questions controls the conversation.'",
-
-  "patternDetected": "(optional — omit the key entirely if no pattern)",
-
-  "overall_score": <integer 0-100 or null per SESSION_DURATION_SECONDS rule above>
+  "beforeYouWalkIn": "string"
 }
 
-Remember: you are Kabir. You are direct. You are warm but honest. You never use corporate coaching language. You sound like a friend who happens to be brilliant at reading people.
+Output valid JSON only. No markdown.`;
 
-Output valid JSON only. Do not wrap in markdown.`;
+function asMoment(
+  raw: unknown,
+  legacy: { quote?: string; why?: string } | null
+): { quote: string; timestamp: string; why: string } {
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const o = raw as Record<string, unknown>;
+    return {
+      quote: typeof o.quote === "string" ? o.quote.trim() : "",
+      timestamp: typeof o.timestamp === "string" ? o.timestamp.trim() : "",
+      why: typeof o.why === "string" ? o.why.trim() : "",
+    };
+  }
+  if (legacy?.quote || legacy?.why) {
+    return {
+      quote: legacy.quote || "",
+      timestamp: "",
+      why: legacy.why || "",
+    };
+  }
+  return { quote: "", timestamp: "", why: "" };
+}
 
 function normalizeKabirNotesOutput(
   raw: Record<string, unknown>
@@ -166,9 +191,94 @@ function normalizeKabirNotesOutput(
     out.summary = take;
   }
 
-  const pd = out.patternDetected;
-  if (pd === "" || pd === null || (typeof pd === "string" && !pd.trim())) {
-    delete out.patternDetected;
+  const rs = out.readinessScore;
+  if (rs === null || rs === undefined || rs === "") {
+    out.readinessScore = null;
+  } else {
+    const n = Number(rs);
+    out.readinessScore = Number.isFinite(n)
+      ? Math.min(95, Math.max(40, Math.round(n)))
+      : null;
+  }
+
+  const allowed = new Set([
+    "Not ready yet",
+    "Getting there",
+    "Almost",
+    "You're ready",
+  ]);
+  if (typeof out.readinessLabel !== "string" || !allowed.has(out.readinessLabel)) {
+    const score = out.readinessScore as number | null;
+    if (score != null) {
+      if (score < 50) out.readinessLabel = "Not ready yet";
+      else if (score < 70) out.readinessLabel = "Getting there";
+      else if (score < 85) out.readinessLabel = "Almost";
+      else out.readinessLabel = "You're ready";
+    } else {
+      out.readinessLabel = "Getting there";
+    }
+  }
+
+  const legacyWw = out.whatWorked as Record<string, unknown> | undefined;
+  const legacyWr = out.whatToRethink as Record<string, unknown> | undefined;
+  if (!out.strongestMoment) {
+    out.strongestMoment = asMoment(null, {
+      quote: typeof legacyWw?.quote === "string" ? legacyWw.quote : undefined,
+      why: typeof legacyWw?.why === "string" ? legacyWw.why : undefined,
+    });
+  } else {
+    const m = asMoment(out.strongestMoment, null);
+    if (!m.quote && legacyWw?.quote) m.quote = String(legacyWw.quote);
+    if (!m.why && legacyWw?.why) m.why = String(legacyWw.why);
+    out.strongestMoment = m;
+  }
+
+  if (!out.weakestMoment) {
+    out.weakestMoment = asMoment(null, {
+      quote: typeof legacyWr?.quote === "string" ? legacyWr.quote : undefined,
+      why: typeof legacyWr?.why === "string" ? legacyWr.why : undefined,
+    });
+  } else {
+    const m = asMoment(out.weakestMoment, null);
+    if (!m.quote && legacyWr?.quote) m.quote = String(legacyWr.quote);
+    if (!m.why && legacyWr?.why) m.why = String(legacyWr.why);
+    out.weakestMoment = m;
+  }
+
+  const rawItems = out.actionItems;
+  const itemsList = Array.isArray(rawItems) ? rawItems : [];
+  out.actionItems = itemsList
+    .filter((x): x is string => typeof x === "string" && Boolean(x.trim()))
+    .map((x) => x.trim())
+    .slice(0, 5);
+
+  let wp = out.wordPattern;
+  if (!wp || typeof wp !== "object" || Array.isArray(wp)) {
+    wp = {};
+  }
+  const wpo = wp as Record<string, unknown>;
+  out.wordPattern = {
+    fillerCount: Math.max(
+      0,
+      Math.round(Number(wpo.fillerCount) || 0)
+    ),
+    topFillers: Array.isArray(wpo.topFillers)
+      ? wpo.topFillers.filter((x) => typeof x === "string").map(String)
+      : [],
+    hedgeCount: Math.max(0, Math.round(Number(wpo.hedgeCount) || 0)),
+    hedgePhrases: Array.isArray(wpo.hedgePhrases)
+      ? wpo.hedgePhrases.filter((x) => typeof x === "string").map(String)
+      : [],
+    apologyCount: Math.max(0, Math.round(Number(wpo.apologyCount) || 0)),
+  };
+
+  if (
+    typeof out.beforeYouWalkIn !== "string" ||
+    !out.beforeYouWalkIn.trim()
+  ) {
+    const alt =
+      typeof out.next_time === "string" ? out.next_time.trim() : "";
+    if (alt) out.beforeYouWalkIn = alt;
   }
 
   return out;
@@ -180,7 +290,6 @@ export async function generateKabirNotes(
 ): Promise<{ notes: Record<string, unknown>; fromCache: boolean } | null> {
   const supabase = createSupabaseAdmin();
 
-  // Check for existing report — use limit(1) to handle possible duplicates gracefully
   const { data: existing } = await supabase
     .from("forensics_reports")
     .select("*")
@@ -210,7 +319,6 @@ export async function generateKabirNotes(
 
   let transcript = session.transcript;
 
-  // PRIMARY FIX: If no transcript in DB, fetch directly from Vapi REST API
   if (!transcript && session.vapi_call_id) {
     console.log(
       "[NOTES] No transcript in DB, fetching from Vapi API for call:",
@@ -259,7 +367,7 @@ Full transcript of the practice session:
 ${transcriptText}`,
         },
       ],
-      max_tokens: 2200,
+      max_tokens: 2800,
     });
 
     const parsed = JSON.parse(
@@ -267,20 +375,24 @@ ${transcriptText}`,
     ) as Record<string, unknown>;
     const notes = normalizeKabirNotesOutput(parsed);
 
-    const shortForScore = durationSec !== null && durationSec < 180;
-    if (shortForScore) {
-      notes.overall_score = null;
-    } else {
-      const n = Number(notes.overall_score);
-      notes.overall_score = Number.isFinite(n)
-        ? Math.min(100, Math.max(0, Math.round(n)))
-        : 50;
-    }
+    const readiness = notes.readinessScore;
+    const overallForDb =
+      typeof readiness === "number"
+        ? readiness
+        : typeof notes.overall_score === "number"
+          ? notes.overall_score
+          : null;
+    notes.overall_score =
+      overallForDb != null && Number.isFinite(overallForDb)
+        ? Math.min(100, Math.max(0, Math.round(Number(overallForDb))))
+        : null;
 
     console.log(
       "[NOTES] Generated notes for session:",
       sessionId,
-      "score:",
+      "readiness:",
+      notes.readinessScore,
+      "overall_score:",
       notes.overall_score,
       "durationSec:",
       durationSec
@@ -304,7 +416,6 @@ ${transcriptText}`,
 
     if (error) {
       console.error("[NOTES] DB insert error:", error.message, error.code);
-      // Still return the notes even if DB save fails — the client can display them
     }
 
     await saveSessionMemory(

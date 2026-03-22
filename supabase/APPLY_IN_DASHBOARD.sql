@@ -1,4 +1,8 @@
--- Immediate end-of-call feedback (CSAT + NPS style signal)
+-- Run this in Supabase → SQL Editor if you are not using the CLI migration runner.
+-- Order matters: session_feedback first, then users + daily cap.
+-- Idempotent: safe to re-run.
+
+-- ========== From migrations/005_session_feedback.sql ==========
 CREATE TABLE IF NOT EXISTS session_feedback (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   session_id UUID NOT NULL REFERENCES sessions (id) ON DELETE CASCADE,
@@ -20,10 +24,30 @@ CREATE INDEX IF NOT EXISTS idx_session_feedback_call_rating ON session_feedback 
 CREATE INDEX IF NOT EXISTS idx_session_feedback_csat_score ON session_feedback (csat_recommend_score);
 
 ALTER TABLE session_feedback ENABLE ROW LEVEL SECURITY;
--- Writes/reads are done via Next.js API with service role (bypasses RLS).
 
 DROP POLICY IF EXISTS "Service role can manage session feedback" ON session_feedback;
 CREATE POLICY "Service role can manage session feedback"
   ON session_feedback FOR ALL
+  USING (current_setting('role')::text = 'service_role')
+  WITH CHECK (current_setting('role')::text = 'service_role');
+
+-- ========== From migrations/006_add_daily_cap_reset.sql ==========
+CREATE TABLE IF NOT EXISTS public.users (
+  id TEXT PRIMARY KEY,
+  daily_cap_reset_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.users
+  ADD COLUMN IF NOT EXISTS daily_cap_reset_at TIMESTAMPTZ DEFAULT NOW();
+
+CREATE INDEX IF NOT EXISTS idx_users_daily_cap_reset ON public.users (daily_cap_reset_at);
+
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Service role can manage users" ON public.users;
+CREATE POLICY "Service role can manage users"
+  ON public.users FOR ALL
   USING (current_setting('role')::text = 'service_role')
   WITH CHECK (current_setting('role')::text = 'service_role');

@@ -55,12 +55,24 @@ export async function buildResumeContextForPrompt(
   const nextTime =
     beforeYou ||
     (typeof notes?.next_time === "string" ? notes.next_time : "");
-  const whatWorked =
-    formatWhatFragment(notes?.whatWorked ?? notes?.what_worked) ||
-    "";
-  const rethink =
-    formatWhatFragment(notes?.whatToRethink ?? notes?.what_to_rethink) ||
-    "";
+  const strongest =
+    notes?.strongestMoment && typeof notes.strongestMoment === "object"
+      ? formatWhatFragment({
+          quote: (notes.strongestMoment as { quote?: string }).quote,
+          why: (notes.strongestMoment as { why?: string }).why,
+        })
+      : formatWhatFragment(notes?.whatWorked ?? notes?.what_worked) || "";
+  const weakest =
+    notes?.weakestMoment && typeof notes.weakestMoment === "object"
+      ? formatWhatFragment({
+          quote: (notes.weakestMoment as { quote?: string }).quote,
+          why: (notes.weakestMoment as { why?: string }).why,
+        })
+      : formatWhatFragment(notes?.whatToRethink ?? notes?.what_to_rethink) ||
+        "";
+
+  const whatWorked = strongest;
+  const rethink = weakest;
 
   let transcriptExcerpt = "";
   if (session.transcript) {

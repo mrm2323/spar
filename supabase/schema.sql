@@ -45,6 +45,23 @@ create table if not exists user_memory (
   updated_at timestamptz not null default now()
 );
 
+-- App user row (Clerk user id → daily cap reset; read/written via service role)
+create table if not exists users (
+  id text primary key,
+  daily_cap_reset_at timestamptz default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_users_daily_cap_reset on users(daily_cap_reset_at);
+
+alter table users enable row level security;
+
+create policy "Service role can manage users"
+  on users for all
+  using (current_setting('role')::text = 'service_role')
+  with check (current_setting('role')::text = 'service_role');
+
 -- Indexes
 create index if not exists idx_sessions_user_id on sessions(user_id);
 create index if not exists idx_sessions_status on sessions(status);
@@ -121,4 +138,5 @@ create policy "Service role can manage memory"
 
 create policy "Service role can manage session feedback"
   on session_feedback for all
-  using (current_setting('role') = 'service_role');
+  using (current_setting('role')::text = 'service_role')
+  with check (current_setting('role')::text = 'service_role');

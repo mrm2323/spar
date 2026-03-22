@@ -98,11 +98,14 @@ export async function getUserSessionUsage(
       
       // Check if we need to update the reset timestamp (only if user hasn't reset today)
       if (userResetDate < calculatedReset) {
-        await supabase
-          .from("users")
-          .update({ daily_cap_reset_at: calculatedReset.toISOString() })
-          .in("id", userIds)
-          .catch(() => {}); // Silently ignore update errors
+        try {
+          await supabase
+            .from("users")
+            .update({ daily_cap_reset_at: calculatedReset.toISOString() })
+            .in("id", userIds);
+        } catch {
+          /* Silently ignore update errors */
+        }
         resetCutoff = calculatedReset;
       }
     }

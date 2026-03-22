@@ -393,6 +393,32 @@ export function formatKabirNotesForMemory(notes: Record<string, unknown>): strin
   const take = s("kabirTake") || s("summary");
   if (take) parts.push(`Kabir's take: ${take}`);
 
+  const rs = notes.readinessScore;
+  const rl = notes.readinessLabel;
+  if (typeof rs === "number" && Number.isFinite(rs)) {
+    parts.push(`Readiness: ${rs}${typeof rl === "string" ? ` (${rl})` : ""}`);
+  }
+
+  const sm = notes.strongestMoment;
+  if (sm && typeof sm === "object" && sm !== null) {
+    const o = sm as { quote?: string; why?: string; timestamp?: string };
+    if (o.quote || o.why) {
+      parts.push(
+        `Strongest: ${o.quote ? `"${o.quote}"` : ""} ${o.timestamp || ""} ${o.why || ""}`.trim()
+      );
+    }
+  }
+
+  const wm = notes.weakestMoment;
+  if (wm && typeof wm === "object" && wm !== null) {
+    const o = wm as { quote?: string; why?: string; timestamp?: string };
+    if (o.quote || o.why) {
+      parts.push(
+        `Rethink: ${o.quote ? `"${o.quote}"` : ""} ${o.timestamp || ""} ${o.why || ""}`.trim()
+      );
+    }
+  }
+
   const ww = notes.whatWorked ?? notes.what_worked;
   if (ww && typeof ww === "object" && ww !== null) {
     const o = ww as { quote?: string; why?: string };
@@ -415,6 +441,21 @@ export function formatKabirNotesForMemory(notes: Record<string, unknown>): strin
     }
   } else if (s("what_to_rethink")) {
     parts.push(`What to rethink: ${s("what_to_rethink")}`);
+  }
+
+  const items = notes.actionItems;
+  if (Array.isArray(items) && items.length) {
+    parts.push(
+      `Action items:\n${items.filter((x) => typeof x === "string").join("\n")}`
+    );
+  }
+
+  const wp = notes.wordPattern;
+  if (wp && typeof wp === "object" && wp !== null) {
+    const w = wp as Record<string, unknown>;
+    parts.push(
+      `Word pattern: fillers ${String(w.fillerCount ?? 0)}, hedges ${String(w.hedgeCount ?? 0)}, apologies ${String(w.apologyCount ?? 0)}`
+    );
   }
 
   const before = s("beforeYouWalkIn") || s("next_time");

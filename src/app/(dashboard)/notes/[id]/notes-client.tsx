@@ -3,24 +3,45 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Mic, ChevronDown } from "lucide-react";
+import {
+  ArrowLeft,
+  Mic,
+  ChevronDown,
+  Copy,
+  Check,
+} from "lucide-react";
 import { extractQuotedSection, type TranscriptMessage } from "@/lib/transcript-stats";
 import { SessionOutcomeFollowUp } from "./session-outcome-followup";
 import { trackEvent } from "@/lib/analytics";
 
 const TRANSCRIPT_PREVIEW_MESSAGES = 8;
-/** Under this, hide session details + confidence */
-const SHORT_SESSION_MAX_SECONDS = 180;
+const BG = "#0A0A0F";
+const CARD = "#111118";
+const CARD_BORDER = "#1E1E2E";
+const BEFORE_BG = "#12121A";
 
-type WhatPair = { quote?: string; why?: string };
+type Moment = { quote?: string; timestamp?: string; why?: string };
+type WordPattern = {
+  fillerCount: number;
+  topFillers: string[];
+  hedgeCount: number;
+  hedgePhrases: string[];
+  apologyCount: number;
+};
 
 interface NotesData {
   kabirTake?: string;
   summary?: string;
-  whatWorked?: WhatPair | string;
-  whatToRethink?: WhatPair | string;
+  readinessScore?: number | null;
+  readinessLabel?: string;
+  strongestMoment?: Moment;
+  weakestMoment?: Moment;
+  whatWorked?: { quote?: string; why?: string } | string;
+  whatToRethink?: { quote?: string; why?: string } | string;
   what_worked?: string;
   what_to_rethink?: string;
+  actionItems?: string[];
+  wordPattern?: WordPattern;
   beforeYouWalkIn?: string;
   next_time?: string;
   patternDetected?: string;
@@ -37,7 +58,7 @@ function renderWithDoubleQuoteHighlights(text: string) {
     i % 2 === 1 ? (
       <span
         key={i}
-        className="font-semibold text-cyan-200/95 [text-shadow:0_0_24px_rgba(34,211,238,0.12)]"
+        className="font-medium italic text-cyan-200/95"
       >
         &quot;{segment}&quot;
       </span>
@@ -47,28 +68,38 @@ function renderWithDoubleQuoteHighlights(text: string) {
   );
 }
 
-function getWhatPair(
+function getLegacyPair(
   notes: NotesData,
   key: "whatWorked" | "whatToRethink",
   legacy: "what_worked" | "what_to_rethink",
-  fallbackLegacy: "best_moment" | "worst_moment"
+  fallback: "best_moment" | "worst_moment"
 ): { quote: string; why: string } {
-  const raw = notes[key] ?? notes[legacy] ?? notes[fallbackLegacy];
+  const raw = notes[key] ?? notes[legacy] ?? notes[fallback];
   if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-    const o = raw as WhatPair;
-    return {
-      quote: (o.quote || "").trim(),
-      why: (o.why || "").trim(),
-    };
+    const o = raw as { quote?: string; why?: string };
+    return { quote: (o.quote || "").trim(), why: (o.why || "").trim() };
   }
   if (typeof raw === "string" && raw.trim()) {
     const ex = extractQuotedSection(raw);
-    return {
-      quote: ex.quote,
-      why: (ex.rest || raw).trim(),
-    };
+    return { quote: ex.quote, why: (ex.rest || raw).trim() };
   }
   return { quote: "", why: "" };
+}
+
+function getMoment(
+  notes: NotesData,
+  primary: "strongestMoment" | "weakestMoment",
+  legacyKey: "whatWorked" | "whatToRethink",
+  legacyStr: "what_worked" | "what_to_rethink",
+  legacyFb: "best_moment" | "worst_moment"
+): Moment {
+  const m = notes[primary];
+  if (m && typeof m === "object" && !Array.isArray(m)) {
+    const o = m as Moment;
+    if (o.quote || o.why || o.timestamp) return { ...o };
+  }
+  const p = getLegacyPair(notes, legacyKey, legacyStr, legacyFb);
+  return { quote: p.quote, why: p.why, timestamp: "" };
 }
 
 function formatDurationDetailed(seconds: number | null | undefined): string {
@@ -77,6 +108,83 @@ function formatDurationDetailed(seconds: number | null | undefined): string {
   const s = seconds % 60;
   if (m === 0) return `${s} sec`;
   return `${m} min ${s} sec`;
+}
+
+function ringStrokeColor(score: number): string {
+  if (score < 50) return "#EF4444";
+  if (score < 70) return "#F59E0B";
+  if (score < 85) return "#6366F1";
+  return "#10B981";
+}
+
+function statHeatClass(n: number): string {
+  if (n <= 2) return "text-emerald-400";
+  if (n <= 5) return "text-amber-400";
+  return "text-red-400";
+}
+
+function ReadinessRing({
+  score,
+  label,
+  sub,
+}: {
+  score: number | null;
+  label: string;
+  sub: string;
+}) {
+  const size = 120;
+  const stroke = 8;
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const pct = score == null ? 0 : Math.min(100, Math.max(0, score));
+  const offset = c - (pct / 100) * c;
+  const color = score == null ? "#52525b" : ringStrokeColor(score);
+
+  return (
+    <div className="flex flex-col items-center">
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg
+          width={size}
+          height={size}
+          className="-rotate-90"
+          aria-hidden
+        >
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={r}
+            fill="none"
+            stroke="#27272a"
+            strokeWidth={stroke}
+          />
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={r}
+            fill="none"
+            stroke={color}
+            strokeWidth={stroke}
+            strokeLinecap="round"
+            strokeDasharray={c}
+            strokeDashoffset={offset}
+            className="transition-[stroke-dashoffset] duration-700 ease-out"
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span
+            className="font-mono text-[36px] font-bold leading-none tracking-tight text-zinc-50"
+            style={{ fontFamily: "var(--font-ibm-mono), ui-monospace, monospace" }}
+          >
+            {score != null ? score : "—"}
+          </span>
+        </div>
+      </div>
+      <p className="mt-4 max-w-[16rem] text-center text-sm text-zinc-400">
+        {label}
+      </p>
+      <p className="mt-1 text-center text-xs text-zinc-500">{sub}</p>
+    </div>
+  );
 }
 
 function normalizeMessages(transcript: unknown): TranscriptMessage[] {
@@ -92,7 +200,10 @@ function normalizeMessages(transcript: unknown): TranscriptMessage[] {
     ) {
       return true;
     }
-    if (text.length > 2200 && (text.includes("========================") || text.includes("\\n- "))) {
+    if (
+      text.length > 2200 &&
+      (text.includes("========================") || text.includes("\\n- "))
+    ) {
       return true;
     }
     return false;
@@ -117,10 +228,7 @@ function normalizeMessages(transcript: unknown): TranscriptMessage[] {
               : typeof row.text === "string"
                 ? row.text
                 : "";
-        return {
-          role: roleRaw,
-          content: contentRaw,
-        };
+        return { role: roleRaw, content: contentRaw };
       })
       .filter((m) => {
         const text = (m.content || "").trim();
@@ -136,21 +244,6 @@ function normalizeMessages(transcript: unknown): TranscriptMessage[] {
     }
   }
   return [];
-}
-
-function ConfidenceBar({ score }: { score: number | null }) {
-  const p = score == null ? 50 : Math.min(100, Math.max(0, score));
-  return (
-    <div className="relative flex h-2 w-full overflow-hidden rounded-sm">
-      <div className="h-full flex-[1] bg-red-500/80" />
-      <div className="h-full flex-[1] bg-amber-500/80" />
-      <div className="h-full flex-[1] bg-emerald-600/80" />
-      <div
-        className="pointer-events-none absolute top-1/2 h-3 w-0.5 -translate-y-1/2 bg-white"
-        style={{ left: `calc(${p}% - 1px)` }}
-      />
-    </div>
-  );
 }
 
 export function NotesClient({
@@ -187,66 +280,13 @@ export function NotesClient({
   );
   const [session, setSession] = useState(initialSession);
   const [deleting, setDeleting] = useState(false);
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [transcriptExpanded, setTranscriptExpanded] = useState(false);
-  const [continuing, setContinuing] = useState(false);
   const [restarting, setRestarting] = useState(false);
-  const [sessionStartError, setSessionStartError] = useState<string | null>(null);
-
-  async function continuePractice() {
-    setContinuing(true);
-    setSessionStartError(null);
-    trackEvent("session_continue_clicked", { session_id: sessionId });
-    try {
-      const res = await fetch("/api/session/start", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          resumeSessionId: sessionId,
-          context: null,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.sessionId) {
-        console.error("Continue session failed:", data);
-        trackEvent("session_continue_failed", {
-          session_id: sessionId,
-          status: res.status,
-          error: data?.error || "unknown",
-        });
-        setSessionStartError(
-          data?.message || data?.error || "Could not start another session right now."
-        );
-        setContinuing(false);
-        return;
-      }
-      trackEvent("session_continue_succeeded", {
-        previous_session_id: sessionId,
-        session_id: data.sessionId,
-      });
-      sessionStorage.setItem(
-        `spar_session_${data.sessionId}`,
-        JSON.stringify({
-          systemPrompt: data.systemPrompt,
-          firstMessage:
-            data.firstMessage ||
-            "Hey. It's Kabir. What conversation are you looking forward to?",
-          maxDurationSeconds: data.maxDurationSeconds,
-          cap: data.cap,
-        })
-      );
-      router.push(`/session/${data.sessionId}`);
-    } catch {
-      trackEvent("session_continue_failed", {
-        session_id: sessionId,
-        status: 0,
-        error: "network_or_unknown",
-      });
-      setSessionStartError("Could not start another session right now.");
-      setContinuing(false);
-    }
-  }
+  const [sessionStartError, setSessionStartError] = useState<string | null>(
+    null
+  );
+  const [copiedBefore, setCopiedBefore] = useState(false);
 
   async function restartPractice() {
     setRestarting(true);
@@ -264,14 +304,15 @@ export function NotesClient({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.sessionId) {
-        console.error("Restart session failed:", data);
         trackEvent("session_restart_failed", {
           session_id: sessionId,
           status: res.status,
           error: data?.error || "unknown",
         });
         setSessionStartError(
-          data?.message || data?.error || "Could not start another session right now."
+          data?.message ||
+            data?.error ||
+            "Could not start another session right now."
         );
         setRestarting(false);
         return;
@@ -321,7 +362,12 @@ export function NotesClient({
           checkData.report?.moments
         ) {
           setNotes(checkData.report.moments);
-          setOverallScore(checkData.report.overall_score ?? null);
+          const m = checkData.report.moments as NotesData;
+          const sc =
+            typeof m.readinessScore === "number"
+              ? m.readinessScore
+              : checkData.report.overall_score;
+          setOverallScore(typeof sc === "number" ? sc : null);
           setLoading(false);
           return;
         }
@@ -349,11 +395,14 @@ export function NotesClient({
 
         if (data.notes) {
           setNotes(data.notes);
-          setOverallScore(
-            typeof data.notes.overall_score === "number"
-              ? data.notes.overall_score
-              : null
-          );
+          const m = data.notes as NotesData;
+          const sc =
+            typeof m.readinessScore === "number"
+              ? m.readinessScore
+              : typeof data.notes.overall_score === "number"
+                ? data.notes.overall_score
+                : null;
+          setOverallScore(sc);
           setLoading(false);
           return;
         }
@@ -437,21 +486,64 @@ export function NotesClient({
     );
   }, [notes]);
 
-  const workedPair = useMemo(
+  const strongest = useMemo(
     () =>
       notes
-        ? getWhatPair(notes, "whatWorked", "what_worked", "best_moment")
-        : { quote: "", why: "" },
+        ? getMoment(
+            notes,
+            "strongestMoment",
+            "whatWorked",
+            "what_worked",
+            "best_moment"
+          )
+        : { quote: "", why: "", timestamp: "" },
     [notes]
   );
 
-  const rethinkPair = useMemo(
+  const weakest = useMemo(
     () =>
       notes
-        ? getWhatPair(notes, "whatToRethink", "what_to_rethink", "worst_moment")
-        : { quote: "", why: "" },
+        ? getMoment(
+            notes,
+            "weakestMoment",
+            "whatToRethink",
+            "what_to_rethink",
+            "worst_moment"
+          )
+        : { quote: "", why: "", timestamp: "" },
     [notes]
   );
+
+  const actionItems = useMemo(() => {
+    if (!notes?.actionItems || !Array.isArray(notes.actionItems)) return [];
+    return notes.actionItems.filter(
+      (x): x is string => typeof x === "string" && x.trim().length > 0
+    );
+  }, [notes]);
+
+  const wordPattern = useMemo((): WordPattern => {
+    const wp = notes?.wordPattern;
+    if (wp && typeof wp === "object") {
+      return {
+        fillerCount: Math.max(0, Number(wp.fillerCount) || 0),
+        topFillers: Array.isArray(wp.topFillers)
+          ? wp.topFillers.filter((x) => typeof x === "string")
+          : [],
+        hedgeCount: Math.max(0, Number(wp.hedgeCount) || 0),
+        hedgePhrases: Array.isArray(wp.hedgePhrases)
+          ? wp.hedgePhrases.filter((x) => typeof x === "string")
+          : [],
+        apologyCount: Math.max(0, Number(wp.apologyCount) || 0),
+      };
+    }
+    return {
+      fillerCount: 0,
+      topFillers: [],
+      hedgeCount: 0,
+      hedgePhrases: [],
+      apologyCount: 0,
+    };
+  }, [notes]);
 
   const beforeYouWalkIn =
     (notes?.beforeYouWalkIn && String(notes.beforeYouWalkIn).trim()) ||
@@ -459,18 +551,34 @@ export function NotesClient({
     notes?.one_thing_to_fix ||
     "";
 
-  const patternDetected =
-    typeof notes?.patternDetected === "string"
-      ? notes.patternDetected.trim()
-      : "";
+  const readinessScoreDisplay = useMemo(() => {
+    if (!notes) return null;
+    if (typeof notes.readinessScore === "number") return notes.readinessScore;
+    if (typeof overallScore === "number") return overallScore;
+    if (typeof notes.overall_score === "number") return notes.overall_score;
+    return null;
+  }, [notes, overallScore]);
+
+  const readinessLabelText = useMemo(() => {
+    if (!notes) return "Getting there";
+    if (typeof notes.readinessLabel === "string" && notes.readinessLabel.trim())
+      return notes.readinessLabel.trim();
+    const s = readinessScoreDisplay;
+    if (s == null) return "Getting there";
+    if (s < 50) return "Not ready yet";
+    if (s < 70) return "Getting there";
+    if (s < 85) return "Almost";
+    return "You're ready";
+  }, [notes, readinessScoreDisplay]);
 
   const highlightPhrases = useMemo(() => {
     const set = new Set<string>();
     if (!notes) return set;
-    if (workedPair.quote.length > 3) set.add(workedPair.quote);
-    if (rethinkPair.quote.length > 3) set.add(rethinkPair.quote);
+    if (strongest.quote && strongest.quote.length > 3)
+      set.add(strongest.quote);
+    if (weakest.quote && weakest.quote.length > 3) set.add(weakest.quote);
     return set;
-  }, [notes, workedPair.quote, rethinkPair.quote]);
+  }, [notes, strongest.quote, weakest.quote]);
 
   const messages = useMemo(
     () => normalizeMessages(session?.transcript),
@@ -504,18 +612,33 @@ export function NotesClient({
     }
   }
 
+  async function copyBeforeYouWalkIn() {
+    if (!beforeYouWalkIn) return;
+    try {
+      await navigator.clipboard.writeText(beforeYouWalkIn);
+      setCopiedBefore(true);
+      trackEvent("notes_copy_before_walk_in", { session_id: sessionId });
+      window.setTimeout(() => setCopiedBefore(false), 2000);
+    } catch {
+      /* noop */
+    }
+  }
+
   if (loading) {
     return (
-      <div className="flex min-h-[60vh] flex-col items-center justify-center text-[#E2E8F0]">
-        <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full border border-slate-700/55 bg-slate-900/55">
+      <div
+        className="flex min-h-[60vh] flex-col items-center justify-center text-zinc-200"
+        style={{ background: BG }}
+      >
+        <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full border border-zinc-700/55 bg-zinc-900/55">
           <span className="text-2xl font-medium">K</span>
         </div>
-        <p className="text-sm text-slate-300">{message}</p>
+        <p className="text-sm text-zinc-300">{message}</p>
         <div className="mt-4 flex gap-1">
           {[0, 1, 2].map((i) => (
             <div
               key={i}
-              className="h-1.5 w-1.5 animate-pulse rounded-full bg-slate-500"
+              className="h-1.5 w-1.5 animate-pulse rounded-full bg-zinc-500"
               style={{ animationDelay: `${i * 0.3}s` }}
             />
           ))}
@@ -523,7 +646,7 @@ export function NotesClient({
         {attempt > 10 && (
           <button
             onClick={() => router.push("/dashboard")}
-            className="mt-6 rounded border border-slate-600/70 px-5 py-2 text-sm text-slate-300 hover:border-cyan-500/60 hover:text-white"
+            className="mt-6 rounded border border-zinc-600/70 px-5 py-2 text-sm text-zinc-300 hover:border-cyan-500/60 hover:text-white"
           >
             Back to dashboard
           </button>
@@ -533,12 +656,6 @@ export function NotesClient({
   }
 
   if (!notes) return null;
-
-  const durationSec = session?.duration_seconds;
-  const isShortSession =
-    typeof durationSec === "number" &&
-    durationSec >= 0 &&
-    durationSec < SHORT_SESSION_MAX_SECONDS;
 
   const dateStr =
     initialDate ||
@@ -557,172 +674,299 @@ export function NotesClient({
         })
       : dateStr;
 
+  const durationLine = formatDurationDetailed(session?.duration_seconds);
+
   return (
-    <div className="mx-auto max-w-xl">
-      <Link
-        href="/dashboard"
-        className="mb-8 inline-flex items-center gap-2 text-xs text-slate-400 hover:text-slate-200"
-      >
-        <ArrowLeft className="h-3 w-3" />
-        Back
-      </Link>
+    <div
+      className="min-h-screen px-4 pb-16 pt-6 sm:px-6"
+      style={{ background: BG }}
+    >
+      <div className="mx-auto max-w-lg">
+        <Link
+          href="/dashboard"
+          className="mb-6 inline-flex items-center gap-2 text-xs text-zinc-500 hover:text-zinc-200"
+        >
+          <ArrowLeft className="h-3 w-3" />
+          Back
+        </Link>
 
-      <p className="font-mono text-[11px] uppercase tracking-wider text-slate-400">
-        {displayDate}
-      </p>
-      <h1 className="mt-1 text-xl font-semibold tracking-tight text-[#E2E8F0]">
-        Kabir&apos;s notes
-      </h1>
+        <p
+          className="font-mono text-[11px] uppercase tracking-wider text-zinc-500"
+          style={{ fontFamily: "var(--font-ibm-mono), ui-monospace, monospace" }}
+        >
+          {displayDate}
+        </p>
+        <h1 className="mt-1 text-xl font-semibold tracking-tight text-zinc-50">
+          Kabir&apos;s notes
+        </h1>
 
-      <div className="mt-10 space-y-10">
-        {/* SECTION 1 */}
-        <section>
-          <h2 className="mb-3 text-[11px] font-medium uppercase tracking-widest text-slate-400">
+        {/* SECTION 1 — SCORE */}
+        <section className="mt-10">
+          <ReadinessRing
+            score={readinessScoreDisplay}
+            label={readinessLabelText}
+            sub="Keep practicing to improve"
+          />
+        </section>
+
+        {/* SECTION 2 — KABIR'S TAKE */}
+        <section className="mt-12 border-l-2 border-cyan-500/50 pl-4">
+          <h2
+            className="font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-500"
+            style={{ fontFamily: "var(--font-ibm-mono), ui-monospace, monospace" }}
+          >
             Kabir&apos;s take
           </h2>
-          <div className="rounded-lg border border-slate-600/50 bg-[#0b1d3e]/55 px-5 py-4 text-[15px] leading-relaxed text-[#E2E8F0] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-            <p className="font-[450] text-slate-50">
-              {kabirTakeText
-                ? renderWithDoubleQuoteHighlights(kabirTakeText)
-                : "—"}
-            </p>
-          </div>
-        </section>
-
-        <section>
-          <h2 className="mb-3 text-[11px] font-medium uppercase tracking-widest text-slate-400">
-            Your words
-          </h2>
-          <p className="mb-3 text-xs text-slate-500">
-            Your strongest line and the one to rethink — tied to what you
-            actually said.
+          <p className="mt-3 text-[15px] leading-relaxed text-zinc-200">
+            {kabirTakeText
+              ? renderWithDoubleQuoteHighlights(kabirTakeText)
+              : "—"}
           </p>
-          <div className="grid gap-4 sm:grid-cols-2">
+        </section>
+
+        {/* SECTION 3 — YOUR MOMENTS */}
+        <section className="mt-12">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+            Your moments
+          </h2>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <div
-              className="rounded-lg border-l-2 border-emerald-500/70 bg-[#0b1d3e]/45 px-4 py-4"
+              className="rounded-lg border border-[#1E1E2E] p-4 pl-3"
               style={{
-                borderTopWidth: 0,
-                borderRightWidth: 0,
-                borderBottomWidth: 0,
+                background: CARD,
+                borderLeftWidth: 3,
+                borderLeftColor: "#10B981",
               }}
             >
-              <p className="text-[10px] font-medium uppercase tracking-wider text-emerald-500/90">
-                What worked
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
+                Strongest
               </p>
-              <p className="mt-3 text-base font-semibold leading-snug text-[#E2E8F0]">
-                {workedPair.quote ? (
-                  <span className="text-[#ecfdf5]">&ldquo;{workedPair.quote}&rdquo;</span>
+              <p className="mt-2 text-[15px] font-medium leading-snug text-zinc-100">
+                {strongest.quote ? (
+                  <>
+                    &ldquo;{strongest.quote}&rdquo;
+                  </>
                 ) : (
-                  <span className="text-slate-500">—</span>
+                  <span className="text-zinc-600">—</span>
                 )}
               </p>
-              {workedPair.why ? (
-                <p className="mt-3 text-xs leading-relaxed text-slate-400">
-                  {workedPair.why}
+              {strongest.timestamp ? (
+                <span className="mt-2 inline-block rounded-full bg-zinc-800/80 px-2 py-0.5 font-mono text-[10px] text-zinc-400">
+                  {strongest.timestamp}
+                </span>
+              ) : null}
+              {strongest.why ? (
+                <p className="mt-3 text-xs leading-relaxed text-zinc-500">
+                  {strongest.why}
                 </p>
               ) : null}
             </div>
             <div
-              className="rounded-lg border-l-2 border-amber-500/70 bg-[#0b1d3e]/45 px-4 py-4"
+              className="rounded-lg border border-[#1E1E2E] p-4 pl-3"
               style={{
-                borderTopWidth: 0,
-                borderRightWidth: 0,
-                borderBottomWidth: 0,
+                background: CARD,
+                borderLeftWidth: 3,
+                borderLeftColor: "#F59E0B",
               }}
             >
-              <p className="text-[10px] font-medium uppercase tracking-wider text-amber-500/90">
-                What to rethink
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-400">
+                Rethink
               </p>
-              <p className="mt-3 text-base font-semibold leading-snug text-[#E2E8F0]">
-                {rethinkPair.quote ? (
-                  <span className="text-[#fff7ed]">&ldquo;{rethinkPair.quote}&rdquo;</span>
+              <p className="mt-2 text-[15px] font-medium leading-snug text-zinc-100">
+                {weakest.quote ? (
+                  <>
+                    &ldquo;{weakest.quote}&rdquo;
+                  </>
                 ) : (
-                  <span className="text-slate-500">—</span>
+                  <span className="text-zinc-600">—</span>
                 )}
               </p>
-              {rethinkPair.why ? (
-                <p className="mt-3 text-xs leading-relaxed text-slate-400">
-                  {rethinkPair.why}
+              {weakest.timestamp ? (
+                <span className="mt-2 inline-block rounded-full bg-zinc-800/80 px-2 py-0.5 font-mono text-[10px] text-zinc-400">
+                  {weakest.timestamp}
+                </span>
+              ) : null}
+              {weakest.why ? (
+                <p className="mt-3 text-xs leading-relaxed text-zinc-500">
+                  {weakest.why}
                 </p>
               ) : null}
             </div>
           </div>
         </section>
 
-        {patternDetected ? (
-          <section className="rounded-lg border-l-[3px] border-violet-500/55 bg-violet-950/20 px-5 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-            <h2 className="mb-2 text-[11px] font-medium uppercase tracking-widest text-violet-300/90">
-              Something I noticed
+        {/* SECTION 4 — GAME PLAN */}
+        {actionItems.length > 0 ? (
+          <section className="mt-12">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+              Your game plan
             </h2>
-            <p className="text-[15px] leading-relaxed text-violet-100/95">
-              {patternDetected}
-            </p>
+            <ul className="mt-4 space-y-3">
+              {actionItems.map((item, i) => (
+                <li
+                  key={i}
+                  className="flex items-start gap-3 rounded-lg border border-[#1E1E2E] p-3"
+                  style={{ background: CARD }}
+                >
+                  <span
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-cyan-500/40 font-mono text-sm font-semibold text-cyan-400"
+                    style={{
+                      fontFamily: "var(--font-ibm-mono), ui-monospace, monospace",
+                    }}
+                  >
+                    {i + 1}
+                  </span>
+                  <p className="flex-1 pt-1 text-sm leading-relaxed text-zinc-200">
+                    {item}
+                  </p>
+                  <div
+                    className="mt-1 h-4 w-4 shrink-0 rounded border border-zinc-600"
+                    aria-hidden
+                  />
+                </li>
+              ))}
+            </ul>
           </section>
         ) : null}
 
-        <section>
-          <h2 className="mb-3 text-[11px] font-medium uppercase tracking-widest text-slate-400">
+        {/* SECTION 5 — WORD PATTERNS */}
+        <section className="mt-12">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+            Patterns Kabir noticed
+          </h2>
+          <div className="mt-4 grid grid-cols-3 gap-2 sm:gap-3">
+            <div
+              className="rounded-lg border border-[#1E1E2E] p-3 text-center"
+              style={{ background: CARD }}
+            >
+              <p
+                className={`font-mono text-2xl font-bold leading-none ${statHeatClass(wordPattern.fillerCount)}`}
+                style={{
+                  fontFamily: "var(--font-ibm-mono), ui-monospace, monospace",
+                }}
+              >
+                {wordPattern.fillerCount}
+              </p>
+              <p className="mt-2 text-[10px] text-zinc-500">filler words</p>
+              <p className="mt-1 font-mono text-[9px] leading-tight text-zinc-600">
+                {wordPattern.topFillers.length
+                  ? wordPattern.topFillers.slice(0, 5).join(", ")
+                  : "—"}
+              </p>
+            </div>
+            <div
+              className="rounded-lg border border-[#1E1E2E] p-3 text-center"
+              style={{ background: CARD }}
+            >
+              <p
+                className={`font-mono text-2xl font-bold leading-none ${statHeatClass(wordPattern.hedgeCount)}`}
+                style={{
+                  fontFamily: "var(--font-ibm-mono), ui-monospace, monospace",
+                }}
+              >
+                {wordPattern.hedgeCount}
+              </p>
+              <p className="mt-2 text-[10px] text-zinc-500">hedges</p>
+              <p className="mt-1 font-mono text-[9px] leading-tight text-zinc-600">
+                {wordPattern.hedgePhrases.length
+                  ? wordPattern.hedgePhrases.slice(0, 4).join(", ")
+                  : "—"}
+              </p>
+            </div>
+            <div
+              className="rounded-lg border border-[#1E1E2E] p-3 text-center"
+              style={{ background: CARD }}
+            >
+              {wordPattern.apologyCount === 0 ? (
+                <>
+                  <div className="flex items-center justify-center gap-1 text-emerald-400">
+                    <Check className="h-6 w-6" strokeWidth={2.5} />
+                  </div>
+                  <p className="mt-1 text-[10px] font-medium text-emerald-400/90">
+                    none detected
+                  </p>
+                  <p className="mt-1 text-[10px] text-zinc-500">
+                    unnecessary apologies
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p
+                    className={`font-mono text-2xl font-bold leading-none ${statHeatClass(wordPattern.apologyCount)}`}
+                    style={{
+                      fontFamily: "var(--font-ibm-mono), ui-monospace, monospace",
+                    }}
+                  >
+                    {wordPattern.apologyCount}
+                  </p>
+                  <p className="mt-2 text-[10px] leading-tight text-zinc-500">
+                    unnecessary apologies
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* SECTION 6 — BEFORE YOU WALK IN */}
+        <section
+          className="mt-12 rounded-xl px-5 py-8 sm:px-8"
+          style={{ background: BEFORE_BG }}
+        >
+          <h2
+            className="font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-500"
+            style={{ fontFamily: "var(--font-ibm-mono), ui-monospace, monospace" }}
+          >
             Before you walk in
           </h2>
-          <div className="rounded-lg border border-slate-500/45 bg-[#071a38]/90 px-6 py-7 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-            <p className="text-xl font-semibold leading-snug tracking-tight text-[#F8FAFC] sm:text-[1.35rem] sm:leading-snug">
-              {beforeYouWalkIn || "—"}
-            </p>
-          </div>
+          <p className="mt-4 text-[18px] font-medium leading-snug text-zinc-50 sm:text-[20px]">
+            {beforeYouWalkIn || "—"}
+          </p>
+          <button
+            type="button"
+            onClick={() => void copyBeforeYouWalkIn()}
+            disabled={!beforeYouWalkIn}
+            className="mt-5 inline-flex items-center gap-2 text-xs text-cyan-400/90 transition-colors hover:text-cyan-300 disabled:opacity-40"
+          >
+            {copiedBefore ? (
+              <Check className="h-3.5 w-3.5" />
+            ) : (
+              <Copy className="h-3.5 w-3.5" />
+            )}
+            {copiedBefore ? "Copied" : "Copy this"}
+          </button>
         </section>
 
-        {/* Session details — only for sessions longer than 3 minutes */}
-        {!isShortSession ? (
-          <section>
-            <button
-              type="button"
-              onClick={() => setDetailsOpen((o) => !o)}
-              className="flex w-full items-center justify-between border-b border-slate-700/40 py-2 text-left"
-            >
-              <span className="text-[11px] font-medium uppercase tracking-widest text-slate-400">
-                Session details
-              </span>
-              <ChevronDown
-                className={`h-4 w-4 text-slate-400 transition-transform ${detailsOpen ? "rotate-180" : ""}`}
-              />
-            </button>
-            {detailsOpen && (
-              <div className="mt-4 space-y-4 font-mono text-xs text-slate-300">
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-slate-500">
-                    Duration
-                  </p>
-                  <p className="mt-1 text-[#E2E8F0]">
-                    {formatDurationDetailed(session?.duration_seconds)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-slate-500">
-                    Session confidence (estimate)
-                  </p>
-                  <p className="mt-1 text-[11px] text-slate-400">
-                    A rough read of how ready you sounded for the real
-                    conversation—not talk-time or word counts (those are noisy
-                    from voice transcripts).
-                  </p>
-                  <p className="mt-2 font-mono text-sm text-[#E2E8F0]">
-                    {(overallScore ?? notes.overall_score) != null
-                      ? `${Math.round(Number(overallScore ?? notes.overall_score))} / 100`
-                      : "—"}
-                  </p>
-                  <div className="mt-2">
-                    <ConfidenceBar
-                      score={overallScore ?? notes.overall_score ?? null}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-          </section>
-        ) : null}
+        {/* SECTION 7 — CTAs */}
+        <section className="mt-10 space-y-3">
+          {sessionStartError ? (
+            <p className="rounded border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">
+              {sessionStartError}
+            </p>
+          ) : null}
+          <button
+            type="button"
+            disabled={restarting}
+            onClick={restartPractice}
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-cyan-600 px-5 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-500 disabled:opacity-50"
+          >
+            <Mic className="h-4 w-4" />
+            {restarting ? "Starting…" : "Practice again"}
+          </button>
+          <button
+            type="button"
+            title="Coming soon"
+            className="flex w-full items-center justify-center rounded-lg border border-zinc-600 bg-transparent px-5 py-3.5 text-sm font-medium text-zinc-300 hover:border-zinc-500 hover:bg-zinc-900/40"
+          >
+            Call me after the real thing
+          </button>
+          <p className="text-center text-[10px] leading-relaxed text-zinc-600">
+            Session {durationLine}. Your conversations are encrypted.
+          </p>
+        </section>
 
-        {/* SECTION 5 */}
-        <section>
+        {/* Transcript (collapsible) */}
+        <section className="mt-10 border-t border-zinc-800/80 pt-6">
           <button
             type="button"
             onClick={() =>
@@ -732,45 +976,45 @@ export function NotesClient({
                 return next;
               })
             }
-            className="flex w-full items-center justify-between border-b border-slate-700/40 py-2 text-left"
+            className="flex w-full items-center justify-between py-2 text-left"
           >
-            <span className="text-[11px] font-medium uppercase tracking-widest text-slate-400">
+            <span
+              className="font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+              style={{
+                fontFamily: "var(--font-ibm-mono), ui-monospace, monospace",
+              }}
+            >
               Full conversation
             </span>
             <ChevronDown
-              className={`h-4 w-4 text-slate-400 transition-transform ${transcriptOpen ? "rotate-180" : ""}`}
+              className={`h-4 w-4 text-zinc-500 transition-transform ${transcriptOpen ? "rotate-180" : ""}`}
             />
           </button>
           {transcriptOpen && (
             <div className="mt-4 space-y-3 text-sm">
               {messages.length === 0 ? (
-                <p className="text-slate-400">Transcript not available yet.</p>
+                <p className="text-zinc-500">Transcript not available yet.</p>
               ) : (
                 transcriptPreview.map((m, i) => {
                   const role = (m.role || "").toLowerCase();
                   const isUser =
                     role === "user" || role === "customer";
                   const content = m.content || "";
-                  const isHighlight = isUser && [...highlightPhrases].some(
-                    (q) => q && content.includes(q)
-                  );
+                  const isHighlight =
+                    isUser &&
+                    [...highlightPhrases].some((q) => q && content.includes(q));
                   return (
                     <div
                       key={i}
                       className={`rounded px-2 py-1.5 ${
-                        isHighlight ? "bg-emerald-950/25" : ""
+                        isHighlight ? "bg-emerald-950/20" : ""
                       }`}
                     >
-                      <span
-                        className="text-[10px] font-mono uppercase tracking-wider text-slate-500"
-                      >
+                      <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-600">
                         {isUser ? "You" : "Kabir"}
                       </span>
                       <p
-                        className="mt-0.5 whitespace-pre-wrap"
-                        style={{
-                          color: isUser ? "#E2E8F0" : "#94A3B8",
-                        }}
+                        className="mt-0.5 whitespace-pre-wrap text-zinc-300"
                       >
                         {content}
                       </p>
@@ -784,7 +1028,7 @@ export function NotesClient({
                 <button
                   type="button"
                   onClick={() => setTranscriptExpanded(true)}
-                  className="mt-2 w-full rounded border border-slate-600/60 bg-slate-900/40 py-2 text-xs font-medium text-cyan-200/90 transition-colors hover:border-cyan-500/50 hover:bg-slate-900/60"
+                  className="mt-2 w-full rounded border border-zinc-700 py-2 text-xs text-cyan-400/90 hover:border-cyan-600/50"
                 >
                   Read full transcript ({messages.length} messages)
                 </button>
@@ -795,7 +1039,7 @@ export function NotesClient({
                 <button
                   type="button"
                   onClick={() => setTranscriptExpanded(false)}
-                  className="mt-2 w-full rounded border border-slate-700/50 py-2 text-xs text-slate-400 hover:text-slate-200"
+                  className="mt-2 w-full py-2 text-xs text-zinc-500 hover:text-zinc-300"
                 >
                   Show less
                 </button>
@@ -803,32 +1047,6 @@ export function NotesClient({
             </div>
           )}
         </section>
-
-        {/* SECTION 6 */}
-        {sessionStartError ? (
-          <p className="rounded border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">
-            {sessionStartError}
-          </p>
-        ) : null}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <button
-            type="button"
-            disabled={restarting}
-            onClick={restartPractice}
-            className="inline-flex flex-1 items-center justify-center gap-2 rounded border border-emerald-600/80 bg-emerald-600/20 px-5 py-3 text-center text-sm font-medium text-emerald-100 hover:bg-emerald-600/30"
-          >
-            <Mic className="h-4 w-4" />
-            {restarting ? "Starting…" : "Practice again"}
-          </button>
-          <button
-            type="button"
-            disabled={continuing}
-            onClick={continuePractice}
-            className="inline-flex flex-1 items-center justify-center rounded border border-cyan-500/50 bg-cyan-500/10 px-5 py-3 text-center text-sm font-medium text-cyan-100 transition-colors hover:border-cyan-400/70 hover:bg-cyan-500/15 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {continuing ? "Starting…" : "Continue this practice"}
-          </button>
-        </div>
 
         <SessionOutcomeFollowUp
           sessionId={sessionId}
@@ -840,7 +1058,7 @@ export function NotesClient({
           type="button"
           onClick={handleDelete}
           disabled={deleting}
-          className="mt-2 w-full text-center text-xs text-slate-500 underline hover:text-slate-300 disabled:opacity-50"
+          className="mt-8 w-full text-center text-xs text-zinc-600 underline hover:text-zinc-400 disabled:opacity-50"
         >
           {deleting ? "Deleting…" : "Delete this session"}
         </button>

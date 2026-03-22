@@ -14,7 +14,7 @@ const dmSans = DM_Sans({
 const ibmMono = IBM_Plex_Mono({
   variable: "--font-ibm-mono",
   subsets: ["latin"],
-  weight: ["400", "500"],
+  weight: ["400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
