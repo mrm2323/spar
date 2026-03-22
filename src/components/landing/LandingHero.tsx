@@ -150,7 +150,25 @@ export function LandingHero({
               </div>
             )
           ) : (
-            <EarlyAccessForm />
+            <div className="mt-10">
+              <EarlyAccessForm />
+              <p className="mt-3 text-xs text-slate-500">
+                Already approved?{" "}
+                <Link
+                  href="/sign-in"
+                  className="text-slate-300 underline decoration-slate-600 underline-offset-2 transition-colors hover:text-cyan-400"
+                >
+                  Sign in
+                </Link>
+                {" · "}
+                <Link
+                  href="/sign-up"
+                  className="text-slate-300 underline decoration-slate-600 underline-offset-2 transition-colors hover:text-cyan-400"
+                >
+                  Create account
+                </Link>
+              </p>
+            </div>
           )}
         </section>
 
