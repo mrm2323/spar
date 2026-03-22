@@ -60,7 +60,13 @@ export default async function NotesPage({
           : null
       }
       sessionCreatedAt={
-        session?.created_at ? String(session.created_at) : null
+        session?.created_at
+          ? String(session.created_at)
+          : session?.started_at
+            ? String(session.started_at)
+            : session?.ended_at
+              ? String(session.ended_at)
+              : null
       }
       initialOutcomeSubmitted={!!existingOutcome}
     />

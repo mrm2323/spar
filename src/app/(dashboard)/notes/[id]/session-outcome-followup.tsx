@@ -6,9 +6,10 @@ import { useCallback, useEffect, useState } from "react";
 const MS_AFTER_SESSION = 60 * 60 * 1000; // 1 hour
 
 function isEligible(createdAtIso: string | null): boolean {
-  if (!createdAtIso) return false;
+  // If timestamp is missing, do not suppress the follow-up.
+  if (!createdAtIso) return true;
   const t = new Date(createdAtIso).getTime();
-  if (Number.isNaN(t)) return false;
+  if (Number.isNaN(t)) return true;
   return Date.now() - t >= MS_AFTER_SESSION;
 }
 
@@ -72,8 +73,7 @@ export function SessionOutcomeFollowUp({
   );
 
   const showThankYou = submitted;
-  const showForm =
-    eligible && sessionCreatedAt && !submitted;
+  const showForm = eligible && !submitted;
 
   if (!showThankYou && !showForm) return null;
 
