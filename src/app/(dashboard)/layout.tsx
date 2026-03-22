@@ -20,13 +20,21 @@ export default function DashboardLayout({
           >
             spar
           </Link>
-          <UserButton
-            appearance={{
-              elements: {
-                avatarBox: "h-8 w-8",
-              },
-            }}
-          />
+          <div className="flex items-center gap-4">
+            <Link
+              href="/dashboard/settings"
+              className="text-xs font-medium uppercase tracking-wider text-slate-300 transition-colors hover:text-cyan-300"
+            >
+              Memory
+            </Link>
+            <UserButton
+              appearance={{
+                elements: {
+                  avatarBox: "h-8 w-8",
+                },
+              }}
+            />
+          </div>
         </div>
       </nav>
       <main className="relative z-10 mx-auto max-w-5xl px-6 pt-20 pb-8">{children}</main>

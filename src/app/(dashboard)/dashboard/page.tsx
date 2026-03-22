@@ -68,7 +68,7 @@ function DashboardInner() {
     const rid = searchParams?.get("resume");
     if (!rid || resumeHandledRef.current) return;
     resumeHandledRef.current = true;
-    setLoading(true);
+    queueMicrotask(() => setLoading(true));
     fetch("/api/session/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -121,7 +121,7 @@ function DashboardInner() {
 
   useEffect(() => {
     if (sessions.length === 0) {
-      setMemorySnippet(null);
+      queueMicrotask(() => setMemorySnippet(null));
       return;
     }
     let cancelled = false;

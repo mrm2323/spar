@@ -3,7 +3,39 @@ import { createSupabaseAdmin } from "@/lib/supabase/server";
 import { generateKabirNotes } from "@/lib/forensics/generate";
 import { buildFullKabirContext } from "@/lib/kabir/memory";
 import { buildKabirPrompt } from "@/lib/kabir/system-prompt";
+import memoryService from "@/services/memory";
+import { getMemoryPreference } from "@/lib/memory/preferences";
 import { NextResponse } from "next/server";
+
+function toMemoryMessages(transcript: unknown): Array<{ role: string; content: string }> {
+  if (!Array.isArray(transcript)) return [];
+  return transcript
+    .map((m) => {
+      const role = typeof m?.role === "string" ? m.role : "";
+      const content =
+        typeof m?.message === "string"
+          ? m.message
+          : typeof m?.content === "string"
+            ? m.content
+            : "";
+      return { role, content };
+    })
+    .filter((m) => m.role && m.content);
+}
+
+async function resolveCanonicalUserId(
+  supabase: ReturnType<typeof createSupabaseAdmin>,
+  userId: string
+): Promise<string> {
+  if (!userId.startsWith("phone:")) return userId;
+  const phone = userId.replace("phone:", "");
+  const { data: memoryRow } = await supabase
+    .from("user_memory")
+    .select("user_id")
+    .eq("phone_number", phone)
+    .maybeSingle();
+  return memoryRow?.user_id || userId;
+}
 
 function normalizePhone(raw: string): string {
   const digits = raw.replace(/\D/g, "");
@@ -120,6 +152,11 @@ export async function POST(req: Request) {
       const artifact = msg.artifact || {};
       const transcript =
         artifact.messages || artifact.transcript || msg.transcript || null;
+      const hasTranscript = Array.isArray(transcript)
+        ? transcript.length > 0
+        : typeof transcript === "string"
+          ? transcript.trim().length > 0
+          : false;
 
       console.log(
         `[VAPI WEBHOOK] end-of-call-report callId=${callId}, hasTranscript=${!!transcript}, hasArtifact=${!!msg.artifact}`
@@ -140,7 +177,37 @@ export async function POST(req: Request) {
         );
         after(async () => {
           try {
-            await generateKabirNotes(session.id, session.user_id);
+            const canonicalUserId = await resolveCanonicalUserId(
+              supabase,
+              session.user_id
+            );
+
+            if (canonicalUserId !== session.user_id) {
+              await supabase
+                .from("sessions")
+                .update({ user_id: canonicalUserId })
+                .eq("id", session.id);
+
+              await supabase
+                .from("forensics_reports")
+                .update({ user_id: canonicalUserId })
+                .eq("session_id", session.id);
+            }
+
+            if (!hasTranscript) {
+              console.warn(
+                "[VAPI WEBHOOK] Missing transcript; skipping memory extract for session:",
+                session.id
+              );
+            }
+
+            await generateKabirNotes(session.id, canonicalUserId);
+
+            const extracted = toMemoryMessages(transcript);
+            const memoryEnabled = await getMemoryPreference(canonicalUserId);
+            if (memoryEnabled && extracted.length > 0) {
+              await memoryService.extractAndRemember(canonicalUserId, extracted);
+            }
           } catch (err) {
             console.error("[VAPI WEBHOOK] Post-session processing error:", err);
           }

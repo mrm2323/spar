@@ -29,6 +29,36 @@ export const MEMORY_CATEGORIES = {
   STRUGGLES: "struggles",
 };
 
+const TRIGGER_PATTERNS = [
+  { regex: /\bi over[- ]?explain\b/i, content: "User tends to over-explain before making the ask." },
+  { regex: /\bi apologize (too )?much\b/i, content: "User often apologizes before asking for what they need." },
+  { regex: /\bi freeze\b/i, content: "User can freeze during difficult conversations." },
+  { regex: /\bi avoid conflict\b/i, content: "User tends to avoid direct conflict." },
+];
+
+const THREAD_KEYWORDS = [
+  { keyword: "roommate", thread: "roommate", category: MEMORY_CATEGORIES.RELATIONSHIPS },
+  { keyword: "manager", thread: "manager", category: MEMORY_CATEGORIES.CAREER },
+  { keyword: "recruiter", thread: "recruiter", category: MEMORY_CATEGORIES.CAREER },
+  { keyword: "interviewer", thread: "interview", category: MEMORY_CATEGORIES.CAREER },
+  { keyword: "professor", thread: "professor", category: MEMORY_CATEGORIES.ACADEMIC },
+  { keyword: "partner", thread: "partner", category: MEMORY_CATEGORIES.RELATIONSHIPS },
+];
+
+function userMessagesOnly(messages) {
+  if (!Array.isArray(messages)) return [];
+  return messages.filter((m) => {
+    const role = String(m?.role || "").toLowerCase();
+    return role === "user" || role === "customer";
+  });
+}
+
+function extractGoalCandidates(text) {
+  const matches =
+    text.match(/\b(i\s+(need|want|plan|will|am going to)\s+[^.?!\n]+)/gi) || [];
+  return [...new Set(matches.map((m) => m.trim()))].slice(0, 3);
+}
+
 /**
  * Store a memory about the user (REST v3 via kabir/memory)
  */
@@ -47,6 +77,49 @@ export async function remember(userId, content, category, metadata = {}) {
  */
 export async function recall(userId, query, options = {}) {
   const limit = options.limit || 5;
+
+  // Prefer raw SDK search so we can preserve memory ids for edit/delete flows.
+  if (supermemory) {
+    try {
+      const result = await supermemory.search({
+        containerTag: userContainerTag(userId),
+        q: query || "",
+        topK: limit,
+      });
+
+      const rows = Array.isArray(result?.results) ? result.results : [];
+      return rows
+        .map((row, idx) => {
+          const content =
+            typeof row?.content === "string"
+              ? row.content
+              : typeof row?.text === "string"
+                ? row.text
+                : typeof row?.chunk?.content === "string"
+                  ? row.chunk.content
+                  : "";
+          const id =
+            typeof row?.id === "string"
+              ? row.id
+              : typeof row?._id === "string"
+                ? row._id
+                : String(idx);
+          return {
+            id,
+            content,
+            metadata:
+              row?.metadata && typeof row.metadata === "object"
+                ? row.metadata
+                : undefined,
+          };
+        })
+        .filter((row) => row.content.length > 0);
+    } catch (error) {
+      console.error("Memory recall error:", error);
+    }
+  }
+
+  // Fallback path for REST helper callers.
   const lines = await searchMemory(userId, query || "");
   return lines.slice(0, limit).map((content, i) => ({ id: String(i), content }));
 }
@@ -93,7 +166,10 @@ export async function getProfile(userId, currentContext = "") {
 export async function extractAndRemember(userId, messages) {
   if (!SERVER_OPENAI_API_KEY || !SERVER_SUPERMEMORY_API_KEY) return [];
 
-  const conversationText = messages
+  const userMessages = userMessagesOnly(messages);
+  if (userMessages.length === 0) return [];
+
+  const conversationText = userMessages
     .map((m) => `${m.role}: ${m.content}`)
     .join("\n");
 
@@ -153,18 +229,75 @@ Return empty array [] if no facts to extract.
 
     const facts = JSON.parse(jsonMatch[0]);
 
-    for (const fact of facts) {
-      await remember(userId, fact.content, fact.category, {
-        importance: fact.importance,
-        emotion: fact.emotion,
+    const userText = userMessages.map((m) => m.content).join("\n").toLowerCase();
+    const heuristicFacts = [];
+
+    for (const trigger of TRIGGER_PATTERNS) {
+      if (trigger.regex.test(userText)) {
+        heuristicFacts.push({
+          content: trigger.content,
+          category: MEMORY_CATEGORIES.STRUGGLES,
+          importance: 4,
+          emotion: "anxious",
+          metadata: { source: "trigger_pattern" },
+        });
+      }
+    }
+
+    for (const thread of THREAD_KEYWORDS) {
+      if (userText.includes(thread.keyword)) {
+        heuristicFacts.push({
+          content: `Current thread focus: ${thread.thread}.`,
+          category: thread.category,
+          importance: 3,
+          emotion: "neutral",
+          metadata: { thread: thread.thread, source: "thread_detection" },
+        });
+      }
+    }
+
+    const goals = extractGoalCandidates(userText);
+    for (const goal of goals) {
+      heuristicFacts.push({
+        content: `Goal: ${goal}`,
+        category: MEMORY_CATEGORIES.GOALS,
+        importance: 4,
+        emotion: "focused",
+        metadata: { status: "planned", source: "goal_detection" },
       });
     }
 
-    return facts;
+    const allFacts = [...facts, ...heuristicFacts];
+
+    for (const fact of allFacts) {
+      await remember(userId, fact.content, fact.category, {
+        importance: fact.importance,
+        emotion: fact.emotion,
+        ...(fact.metadata || {}),
+      });
+    }
+
+    return allFacts;
   } catch (error) {
     console.error("Fact extraction error:", error);
     return [];
   }
+}
+
+/**
+ * List recent memories for review UI.
+ */
+export async function listMemories(userId, options = {}) {
+  return recall(userId, options.query || "", { limit: options.limit || 30 });
+}
+
+/**
+ * Replace an existing memory by deleting it and re-adding updated content.
+ */
+export async function updateMemory(userId, memoryId, content, category, metadata = {}) {
+  const deleted = await forget(userId, memoryId);
+  if (!deleted) return null;
+  return remember(userId, content, category || "general", metadata);
 }
 
 export async function forget(userId, memoryId) {
@@ -231,6 +364,8 @@ const memoryService = {
   recall,
   getProfile,
   extractAndRemember,
+  listMemories,
+  updateMemory,
   forget,
   forgetAll,
   formatMemoriesForPrompt,

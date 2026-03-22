@@ -191,17 +191,34 @@ export default function SessionPage() {
     setStatus("ended");
     if (timerRef.current) clearInterval(timerRef.current);
 
-    await fetch("/api/session/end", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionId: id,
-        vapiCallId: callIdRef.current,
-      }),
-    });
+    try {
+      const res = await fetch("/api/session/end", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: id,
+          vapiCallId: callIdRef.current,
+        }),
+      });
 
-    sessionStorage.removeItem(`spar_session_${id}`);
-    setTimeout(() => router.push(`/notes/${id}`), 2500);
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        const reason = data.error || `HTTP ${res.status}`;
+        throw new Error(reason);
+      }
+
+      sessionStorage.removeItem(`spar_session_${id}`);
+      setTimeout(() => router.push(`/notes/${id}`), 2500);
+    } catch (error) {
+      console.error("End session failed:", error);
+      endingRef.current = false;
+      setStatus("error");
+      setErrorMsg(
+        `Could not end this session: ${error instanceof Error ? error.message : "unknown error"}`
+      );
+    }
   }, [id, router]);
 
   const formatTime = (s: number) => {
