@@ -41,22 +41,6 @@ function relativeSessionTime(iso: string | null): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-function SessionConfidenceBar({ score }: { score: number | null | undefined }) {
-  const p =
-    score == null ? 50 : Math.min(100, Math.max(0, score));
-  return (
-    <div className="relative mt-2 flex h-1.5 w-full max-w-[120px] overflow-hidden rounded-sm">
-      <div className="h-full flex-[1] bg-red-500/80" />
-      <div className="h-full flex-[1] bg-amber-500/80" />
-      <div className="h-full flex-[1] bg-emerald-600/80" />
-      <div
-        className="pointer-events-none absolute top-1/2 h-2.5 w-px -translate-y-1/2 bg-white"
-        style={{ left: `calc(${p}% - 0.5px)` }}
-      />
-    </div>
-  );
-}
-
 interface ProcessedFile {
   name: string;
   text: string;
@@ -170,11 +154,18 @@ export default function DashboardPage() {
       {/* TOP */}
       <div className="flex min-h-[52vh] flex-col items-center justify-center">
         <div className="text-center">
+          {!loading && (
+            <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.18em] text-cyan-300/85">
+              Tap mic to start
+            </p>
+          )}
+
           <button
             type="button"
             onClick={startSession}
             disabled={loading}
-            className="group relative mx-auto mb-6 flex h-44 w-44 items-center justify-center rounded-full border border-cyan-300/25 bg-cyan-400/5 transition-all duration-300 hover:border-cyan-300/45 disabled:opacity-50"
+            aria-label="Start conversation with Kabir"
+            className="group relative mx-auto mb-6 flex h-44 w-44 cursor-pointer items-center justify-center rounded-full border border-cyan-300/25 bg-cyan-400/5 transition-all duration-300 hover:scale-[1.01] hover:border-cyan-300/60 hover:bg-cyan-400/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#020617] disabled:cursor-not-allowed disabled:opacity-50"
           >
             <span className="pointer-events-none absolute inset-0 rounded-full bg-gradient-to-br from-cyan-400/25 to-blue-500/15 blur-2xl" />
             <span className="pointer-events-none absolute inset-3 rounded-full border border-cyan-200/15" />
@@ -188,26 +179,15 @@ export default function DashboardPage() {
             )}
           </button>
 
-          {!loading && (
-            <div className="mb-6 flex items-end justify-center gap-1">
-              {[0, 1, 2, 3, 4, 5, 6].map((i) => (
-                <span
-                  key={i}
-                  className="animate-waveform w-1.5 rounded-full bg-cyan-300/90"
-                  style={{
-                    height: `${8 + (i % 3) * 5}px`,
-                    animationDelay: `${i * 0.08}s`,
-                  }}
-                />
-              ))}
-            </div>
-          )}
-
           <h1 className="text-2xl font-semibold tracking-tight">
             {loading
               ? "Connecting to Kabir..."
               : "What conversation are you looking forward to?"}
           </h1>
+
+          <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-slate-300">
+            Kabir is an AI coach. Practice first, then walk in ready.
+          </p>
 
           {!loading && (
             <div className="mt-6">
@@ -306,7 +286,6 @@ export default function DashboardPage() {
                     </div>
                     <ArrowRight className="h-4 w-4 shrink-0 text-slate-500" />
                   </div>
-                  <SessionConfidenceBar score={session.confidence ?? null} />
                 </Link>
               ))}
             </div>
