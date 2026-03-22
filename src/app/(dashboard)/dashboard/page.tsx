@@ -18,7 +18,6 @@ interface PastSession {
   ended_at: string | null;
   duration_seconds: number | null;
   notes_preview?: string | null;
-  confidence?: number | null;
   thread_attempts?: number;
 }
 

@@ -258,7 +258,7 @@ export async function getDeepMemoryContext(userId: string): Promise<string> {
         limit: 18,
       }),
       searchDocuments({
-        q: "patterns habits hedging confidence directness communication weaknesses strengths",
+        q: "patterns habits hedging directness communication weaknesses strengths",
         containerTags: [tag],
         limit: 16,
       }),
@@ -393,11 +393,8 @@ export function formatKabirNotesForMemory(notes: Record<string, unknown>): strin
   const take = s("kabirTake") || s("summary");
   if (take) parts.push(`Kabir's take: ${take}`);
 
-  const rs = notes.readinessScore;
-  const rl = notes.readinessLabel;
-  if (typeof rs === "number" && Number.isFinite(rs)) {
-    parts.push(`Readiness: ${rs}${typeof rl === "string" ? ` (${rl})` : ""}`);
-  }
+  const readiness = s("readiness");
+  if (readiness) parts.push(`Readiness: ${readiness}`);
 
   const sm = notes.strongestMoment;
   if (sm && typeof sm === "object" && sm !== null) {

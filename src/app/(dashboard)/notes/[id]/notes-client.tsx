@@ -30,7 +30,9 @@ type WordPattern = {
 interface NotesData {
   kabirTake?: string;
   summary?: string;
-  readinessScore?: number | null;
+  /** Kabir's plain-language readiness (no numbers) */
+  readiness?: string;
+  /** @deprecated Old notes only */
   readinessLabel?: string;
   strongestMoment?: Moment;
   weakestMoment?: Moment;
@@ -43,10 +45,39 @@ interface NotesData {
   beforeYouWalkIn?: string;
   next_time?: string;
   patternDetected?: string;
-  overall_score?: number | null;
   best_moment?: string;
   worst_moment?: string;
   one_thing_to_fix?: string;
+}
+
+/** Text shown for ARE YOU READY (new `readiness` field or legacy label mapping). */
+function getReadinessDisplay(notes: NotesData): string {
+  const r = typeof notes.readiness === "string" ? notes.readiness.trim() : "";
+  if (r) return r;
+  const lbl =
+    typeof notes.readinessLabel === "string" ? notes.readinessLabel.trim() : "";
+  if (lbl === "You're ready") {
+    return "You are ready. You said what you needed to say and you said it clearly. Go do it. Call me after.";
+  }
+  if (lbl === "Almost" || lbl === "Getting there") {
+    return "Your opening is solid. But when I pushed back you softened everything. Practice the pushback once more before you go in.";
+  }
+  if (lbl === "Not ready yet") {
+    return "Honestly, not yet. You are still circling around the thing you need to say instead of saying it. Call me back. We will get there.";
+  }
+  if (lbl === "Not scored yet") {
+    return "I did not hear enough to tell you. Give me 5 minutes next time and I will give you a real answer.";
+  }
+  return "This session was saved before Kabir's readiness note. Start a new practice to see his honest read.";
+}
+
+/** True when Kabir's read is fully supportive — primary CTA is affirming, not restart. */
+function isReadinessAffirming(notes: NotesData, readinessText: string): boolean {
+  const t = readinessText.toLowerCase();
+  if (t.includes("you are ready")) return true;
+  const lbl = notes.readinessLabel;
+  if (typeof lbl === "string" && lbl.includes("You're ready")) return true;
+  return false;
 }
 
 function renderWithDoubleQuoteHighlights(text: string) {
@@ -100,89 +131,10 @@ function getMoment(
   return { quote: p.quote, why: p.why, timestamp: "" };
 }
 
-function formatDurationDetailed(seconds: number | null | undefined): string {
-  if (seconds == null || seconds < 0) return "—";
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  if (m === 0) return `${s} sec`;
-  return `${m} min ${s} sec`;
-}
-
-function ringStrokeColor(score: number): string {
-  if (score < 50) return "#EF4444";
-  if (score < 70) return "#F59E0B";
-  if (score < 85) return "#6366F1";
-  return "#10B981";
-}
-
 function statHeatClass(n: number): string {
   if (n <= 2) return "text-emerald-400";
   if (n <= 5) return "text-amber-400";
   return "text-red-400";
-}
-
-function ReadinessRing({
-  score,
-  label,
-  sub,
-}: {
-  score: number | null;
-  label: string;
-  sub: string;
-}) {
-  const size = 120;
-  const stroke = 8;
-  const r = (size - stroke) / 2;
-  const c = 2 * Math.PI * r;
-  const pct = score == null ? 0 : Math.min(100, Math.max(0, score));
-  const offset = c - (pct / 100) * c;
-  const color = score == null ? "#52525b" : ringStrokeColor(score);
-
-  return (
-    <div className="flex flex-col items-center">
-      <div className="relative" style={{ width: size, height: size }}>
-        <svg
-          width={size}
-          height={size}
-          className="-rotate-90"
-          aria-hidden
-        >
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={r}
-            fill="none"
-            stroke="#27272a"
-            strokeWidth={stroke}
-          />
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={r}
-            fill="none"
-            stroke={color}
-            strokeWidth={stroke}
-            strokeLinecap="round"
-            strokeDasharray={c}
-            strokeDashoffset={offset}
-            className="transition-[stroke-dashoffset] duration-700 ease-out"
-          />
-        </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span
-            className="font-mono text-[36px] font-bold leading-none tracking-tight text-[#E2E8F0]"
-            style={{ fontFamily: "var(--font-ibm-mono), ui-monospace, monospace" }}
-          >
-            {score != null ? score : "—"}
-          </span>
-        </div>
-      </div>
-      <p className="mt-4 max-w-[16rem] text-center text-sm text-slate-400">
-        {label}
-      </p>
-      <p className="mt-1 text-center text-xs text-slate-500">{sub}</p>
-    </div>
-  );
 }
 
 function normalizeMessages(transcript: unknown): TranscriptMessage[] {
@@ -248,7 +200,6 @@ export function NotesClient({
   sessionId,
   initialNotes,
   initialDate,
-  overallScore: initialOverallScore,
   initialSession,
   sessionCreatedAt,
   initialOutcomeSubmitted,
@@ -256,9 +207,7 @@ export function NotesClient({
   sessionId: string;
   initialNotes?: NotesData | null;
   initialDate?: string | null;
-  overallScore?: number | null;
   initialSession: {
-    duration_seconds: number | null;
     transcript: unknown;
     ended_at: string | null;
   } | null;
@@ -273,9 +222,6 @@ export function NotesClient({
   );
   const [attempt, setAttempt] = useState(0);
   const generatingRef = useRef(false);
-  const [overallScore, setOverallScore] = useState<number | null>(
-    initialOverallScore ?? null
-  );
   const [session, setSession] = useState(initialSession);
   const [deleting, setDeleting] = useState(false);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
@@ -360,12 +306,6 @@ export function NotesClient({
           checkData.report?.moments
         ) {
           setNotes(checkData.report.moments);
-          const m = checkData.report.moments as NotesData;
-          const sc =
-            typeof m.readinessScore === "number"
-              ? m.readinessScore
-              : checkData.report.overall_score;
-          setOverallScore(typeof sc === "number" ? sc : null);
           setLoading(false);
           return;
         }
@@ -393,14 +333,6 @@ export function NotesClient({
 
         if (data.notes) {
           setNotes(data.notes);
-          const m = data.notes as NotesData;
-          const sc =
-            typeof m.readinessScore === "number"
-              ? m.readinessScore
-              : typeof data.notes.overall_score === "number"
-                ? data.notes.overall_score
-                : null;
-          setOverallScore(sc);
           setLoading(false);
           return;
         }
@@ -439,7 +371,6 @@ export function NotesClient({
           if (cancelled || !d.session) return;
 
           const next = {
-            duration_seconds: d.session.duration_seconds,
             transcript: d.session.transcript,
             ended_at: d.session.ended_at,
           };
@@ -549,25 +480,15 @@ export function NotesClient({
     notes?.one_thing_to_fix ||
     "";
 
-  const readinessScoreDisplay = useMemo(() => {
-    if (!notes) return null;
-    if (typeof notes.readinessScore === "number") return notes.readinessScore;
-    if (typeof overallScore === "number") return overallScore;
-    if (typeof notes.overall_score === "number") return notes.overall_score;
-    return null;
-  }, [notes, overallScore]);
+  const readinessParagraph = useMemo(() => {
+    if (!notes) return "";
+    return getReadinessDisplay(notes);
+  }, [notes]);
 
-  const readinessLabelText = useMemo(() => {
-    if (!notes) return "Getting there";
-    if (typeof notes.readinessLabel === "string" && notes.readinessLabel.trim())
-      return notes.readinessLabel.trim();
-    const s = readinessScoreDisplay;
-    if (s == null) return "Getting there";
-    if (s < 50) return "Not ready yet";
-    if (s < 70) return "Getting there";
-    if (s < 85) return "Almost";
-    return "You're ready";
-  }, [notes, readinessScoreDisplay]);
+  const primaryCtaAffirming = useMemo(() => {
+    if (!notes) return false;
+    return isReadinessAffirming(notes, readinessParagraph);
+  }, [notes, readinessParagraph]);
 
   const highlightPhrases = useMemo(() => {
     const set = new Set<string>();
@@ -669,8 +590,6 @@ export function NotesClient({
         })
       : dateStr;
 
-  const durationLine = formatDurationDetailed(session?.duration_seconds);
-
   return (
     <div className="px-4 pb-16 pt-6 sm:px-6">
       <div className="mx-auto max-w-lg">
@@ -692,17 +611,8 @@ export function NotesClient({
           Kabir&apos;s notes
         </h1>
 
-        {/* SECTION 1 — SCORE */}
-        <section className="mt-10">
-          <ReadinessRing
-            score={readinessScoreDisplay}
-            label={readinessLabelText}
-            sub="Keep practicing to improve"
-          />
-        </section>
-
-        {/* SECTION 2 — KABIR'S TAKE */}
-        <section className="mt-12 border-l-2 border-cyan-500/50 pl-4">
+        {/* SECTION 1 — KABIR'S TAKE */}
+        <section className="mt-10 border-l-2 border-cyan-500/50 pl-4">
           <h2
             className="font-mono text-[10px] uppercase tracking-[0.2em] text-slate-400"
             style={{ fontFamily: "var(--font-ibm-mono), ui-monospace, monospace" }}
@@ -716,7 +626,7 @@ export function NotesClient({
           </p>
         </section>
 
-        {/* SECTION 3 — YOUR MOMENTS */}
+        {/* SECTION 2 — YOUR MOMENTS */}
         <section className="mt-12">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
             Your moments
@@ -787,7 +697,7 @@ export function NotesClient({
           </div>
         </section>
 
-        {/* SECTION 4 — GAME PLAN */}
+        {/* SECTION 3 — GAME PLAN */}
         {actionItems.length > 0 ? (
           <section className="mt-12">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
@@ -821,11 +731,15 @@ export function NotesClient({
           </section>
         ) : null}
 
-        {/* SECTION 5 — WORD PATTERNS */}
+        {/* SECTION 4 — WORD PATTERNS */}
         <section className="mt-12">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
             Patterns Kabir noticed
           </h2>
+          <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
+            From your side of the conversation only (not Kabir). When something
+            is listed below, those are the words or phrases that showed up.
+          </p>
           <div className="mt-4 grid grid-cols-3 gap-2 sm:gap-3">
             <div
               className="rounded-lg border border-[#1E1E2E] p-3 text-center"
@@ -840,10 +754,12 @@ export function NotesClient({
                 {wordPattern.fillerCount}
               </p>
               <p className="mt-2 text-[10px] text-slate-400">filler words</p>
-              <p className="mt-1 font-mono text-[9px] leading-tight text-slate-500">
-                {wordPattern.topFillers.length
-                  ? wordPattern.topFillers.slice(0, 5).join(", ")
-                  : "—"}
+              <p className="mt-2 text-[10px] leading-snug text-slate-400">
+                {wordPattern.fillerCount === 0
+                  ? "No filler words like um, uh, or like stood out in what you said."
+                  : wordPattern.topFillers.length > 0
+                    ? `Examples: ${wordPattern.topFillers.slice(0, 5).join(", ")}`
+                    : `${wordPattern.fillerCount} instance${wordPattern.fillerCount === 1 ? "" : "s"} — see Kabir’s take for where they appeared.`}
               </p>
             </div>
             <div
@@ -859,10 +775,12 @@ export function NotesClient({
                 {wordPattern.hedgeCount}
               </p>
               <p className="mt-2 text-[10px] text-slate-400">hedges</p>
-              <p className="mt-1 font-mono text-[9px] leading-tight text-slate-500">
-                {wordPattern.hedgePhrases.length
-                  ? wordPattern.hedgePhrases.slice(0, 4).join(", ")
-                  : "—"}
+              <p className="mt-2 text-[10px] leading-snug text-slate-400">
+                {wordPattern.hedgeCount === 0
+                  ? "No hedging phrases like “I guess” or “maybe” stood out in your lines."
+                  : wordPattern.hedgePhrases.length > 0
+                    ? `Examples: ${wordPattern.hedgePhrases.slice(0, 4).join(", ")}`
+                    : `${wordPattern.hedgeCount} hedge${wordPattern.hedgeCount === 1 ? "" : "s"} — see Kabir’s take for where they appeared.`}
               </p>
             </div>
             <div
@@ -894,13 +812,17 @@ export function NotesClient({
                   <p className="mt-2 text-[10px] leading-tight text-slate-400">
                     unnecessary apologies
                   </p>
+                  <p className="mt-2 text-[10px] leading-snug text-slate-500">
+                    Sorry / apologize-type lines counted when they weren’t
+                    needed for the moment.
+                  </p>
                 </>
               )}
             </div>
           </div>
         </section>
 
-        {/* SECTION 6 — BEFORE YOU WALK IN */}
+        {/* SECTION 5 — BEFORE YOU WALK IN */}
         <section
           className="mt-12 rounded-xl px-5 py-8 sm:px-8"
           style={{ background: BEFORE_BG }}
@@ -929,22 +851,46 @@ export function NotesClient({
           </button>
         </section>
 
-        {/* SECTION 7 — CTAs */}
+        {/* ARE YOU READY — Kabir's honest read (no scoring) */}
+        <section className="mt-14">
+          <h2
+            className="font-mono text-[10px] uppercase tracking-[0.2em] text-slate-400"
+            style={{
+              fontFamily: "var(--font-ibm-mono), ui-monospace, monospace",
+            }}
+          >
+            ARE YOU READY?
+          </h2>
+          <p className="mt-5 text-[17px] leading-relaxed text-[#E2E8F0] sm:text-[18px]">
+            {readinessParagraph}
+          </p>
+        </section>
+
+        {/* CTAs */}
         <section className="mt-10 space-y-3">
           {sessionStartError ? (
             <p className="rounded border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">
               {sessionStartError}
             </p>
           ) : null}
-          <button
-            type="button"
-            disabled={restarting}
-            onClick={restartPractice}
-            className="flex w-full items-center justify-center gap-2 rounded-lg bg-cyan-600 px-5 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-500 disabled:opacity-50"
-          >
-            <Mic className="h-4 w-4" />
-            {restarting ? "Starting…" : "Practice again"}
-          </button>
+          {primaryCtaAffirming ? (
+            <button
+              type="button"
+              className="flex w-full cursor-default items-center justify-center rounded-lg bg-cyan-600 px-5 py-3.5 text-sm font-semibold text-white"
+            >
+              You got this. Go.
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={restarting}
+              onClick={restartPractice}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-cyan-600 px-5 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-500 disabled:opacity-50"
+            >
+              <Mic className="h-4 w-4" />
+              {restarting ? "Starting…" : "Practice again"}
+            </button>
+          )}
           <button
             type="button"
             title="Coming soon"
@@ -953,7 +899,7 @@ export function NotesClient({
             Call me after the real thing
           </button>
           <p className="text-center text-[10px] leading-relaxed text-slate-500">
-            Session {durationLine}. Your conversations are encrypted.
+            Your conversations are encrypted.
           </p>
         </section>
 

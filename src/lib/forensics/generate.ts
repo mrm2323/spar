@@ -119,25 +119,31 @@ ABSOLUTE RULES:
 
 4. Never suggest openings that start with "I'm excited about this opportunity."
 
-5. If the session was short (under 3 minutes), do NOT apologize. Still fill every JSON field: estimate wordPattern from what you heard; give a readinessScore in 40-95 based on what little you heard; set timestamps like "near the start".
+5. If the session was short (under 3 minutes), do NOT apologize. Still fill wordPattern from what you heard; set timestamps like "near the start".
 
-6. readinessScore must be an integer from 40 to 95 (inclusive) when you have enough signal. If SESSION_DURATION_SECONDS is less than 180, still output a number 40-95 from what you heard, OR use null only if impossible.
+6. readiness — One to two sentences. Kabir's honest gut read on whether this person is ready for the real conversation. This is NOT a score. It is a human judgment based on what he heard.
 
-7. readinessLabel must be exactly one of: "Not ready yet" | "Getting there" | "Almost" | "You're ready" — align with the score (lower score → "Not ready yet", high → "You're ready").
+Rules for readiness (pick the situation that fits; paraphrase only if needed to sound natural, never add numbers or scales):
+- If they practiced well and showed improvement: 'You are ready. You said what you needed to say and you said it clearly. Go do it. Call me after.'
+- If they are partially ready: 'Your opening is solid. But when I pushed back you softened everything. Practice the pushback once more before you go in.'
+- If they are not ready: 'Honestly, not yet. You are still circling around the thing you need to say instead of saying it. Call me back. We will get there.'
+- If the session was too short to judge: 'I did not hear enough to tell you. Give me 5 minutes next time and I will give you a real answer.'
 
-8. strongestMoment and weakestMoment: quote must be exact user words; timestamp is a short phrase like "near the start" or "2 minutes in".
+NEVER assign a number. NEVER say a percentage. NEVER use a scale. NEVER output a numeric readiness field.
+Just tell them the truth in plain language.
 
-9. actionItems: exactly 3 strings (or fewer if transcript is tiny). Direct instructions ("Do X"), not vague advice.
+7. strongestMoment and weakestMoment: quote must be exact user words; timestamp is a short phrase like "near the start" or "2 minutes in".
 
-10. wordPattern: estimate counts from the USER's lines only. topFillers and hedgePhrases are short strings. If no fillers, fillerCount 0 and topFillers []. Same for hedges and apologies.
+8. actionItems: exactly 3 strings (or fewer if transcript is tiny). Direct instructions ("Do X"), not vague advice.
 
-11. beforeYouWalkIn: one concrete sentence using their details. Never the generic excited-opportunity line.
+9. wordPattern: counts come from the USER's lines only. When fillerCount > 0, topFillers MUST list the actual words they used (e.g. "um", "like"), most frequent first, max 5. When fillerCount is 0, topFillers is []. Same idea for hedgePhrases when hedgeCount > 0 — use exact phrases from their lines (e.g. "I guess", "maybe").
+
+10. beforeYouWalkIn: one concrete sentence using their details. Never the generic excited-opportunity line.
 
 FORMAT YOUR RESPONSE AS JSON ONLY:
 {
   "kabirTake": "string",
-  "readinessScore": 40-95 or null,
-  "readinessLabel": "Not ready yet" | "Getting there" | "Almost" | "You're ready",
+  "readiness": "string",
   "strongestMoment": { "quote": "string", "timestamp": "string", "why": "string" },
   "weakestMoment": { "quote": "string", "timestamp": "string", "why": "string" },
   "actionItems": ["string", "string", "string"],
@@ -191,33 +197,18 @@ function normalizeKabirNotesOutput(
     out.summary = take;
   }
 
-  const rs = out.readinessScore;
-  if (rs === null || rs === undefined || rs === "") {
-    out.readinessScore = null;
-  } else {
-    const n = Number(rs);
-    out.readinessScore = Number.isFinite(n)
-      ? Math.min(95, Math.max(40, Math.round(n)))
-      : null;
+  let readinessStr =
+    typeof out.readiness === "string" ? out.readiness.trim() : "";
+  if (!readinessStr) {
+    readinessStr =
+      "I did not hear enough to tell you. Give me 5 minutes next time and I will give you a real answer.";
   }
+  out.readiness = readinessStr;
 
-  const allowed = new Set([
-    "Not ready yet",
-    "Getting there",
-    "Almost",
-    "You're ready",
-  ]);
-  if (typeof out.readinessLabel !== "string" || !allowed.has(out.readinessLabel)) {
-    const score = out.readinessScore as number | null;
-    if (score != null) {
-      if (score < 50) out.readinessLabel = "Not ready yet";
-      else if (score < 70) out.readinessLabel = "Getting there";
-      else if (score < 85) out.readinessLabel = "Almost";
-      else out.readinessLabel = "You're ready";
-    } else {
-      out.readinessLabel = "Getting there";
-    }
-  }
+  delete out.readinessScore;
+  delete out.readinessLabel;
+  delete out.overall_score;
+  delete out.scoreSuppressedReason;
 
   const legacyWw = out.whatWorked as Record<string, unknown> | undefined;
   const legacyWr = out.whatToRethink as Record<string, unknown> | undefined;
@@ -375,31 +366,14 @@ ${transcriptText}`,
     ) as Record<string, unknown>;
     const notes = normalizeKabirNotesOutput(parsed);
 
-    const readiness = notes.readinessScore;
-    const overallForDb =
-      typeof readiness === "number"
-        ? readiness
-        : typeof notes.overall_score === "number"
-          ? notes.overall_score
-          : null;
-    notes.overall_score =
-      overallForDb != null && Number.isFinite(overallForDb)
-        ? Math.min(100, Math.max(0, Math.round(Number(overallForDb))))
-        : null;
-
     console.log(
       "[NOTES] Generated notes for session:",
       sessionId,
       "readiness:",
-      notes.readinessScore,
-      "overall_score:",
-      notes.overall_score,
+      String(notes.readiness).slice(0, 120),
       "durationSec:",
       durationSec
     );
-
-    const scoreForDb =
-      typeof notes.overall_score === "number" ? notes.overall_score : null;
 
     const summaryLine =
       (typeof notes.summary === "string" && notes.summary.trim()) ||
@@ -409,7 +383,7 @@ ${transcriptText}`,
     const { error } = await supabase.from("forensics_reports").insert({
       session_id: sessionId,
       user_id: userId,
-      overall_score: scoreForDb,
+      overall_score: null,
       summary: summaryLine,
       moments: notes,
     });

@@ -14,7 +14,7 @@ export interface KabirNotes {
   session_id: string;
   user_id: string;
   created_at: string;
-  overall_score: number;
+  overall_score: number | null;
   summary: string;
   best_moment: string;
   worst_moment: string;

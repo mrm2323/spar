@@ -27,10 +27,9 @@ export default async function NotesPage({
 
   const { data: session } = await supabase
     .from("sessions")
-    .select("duration_seconds, transcript, ended_at, started_at, created_at")
+    .select("transcript, ended_at, started_at, created_at")
     .eq("id", id)
     .single();
-  // duration_seconds: <3 min hides Session details; notes content always shows
 
   const { data: existingOutcome } = await supabase
     .from("session_outcomes")
@@ -45,15 +44,9 @@ export default async function NotesPage({
         report ? (report.moments as Record<string, unknown>) : null
       }
       initialDate={report?.created_at || null}
-      overallScore={
-        report != null && typeof report.overall_score === "number"
-          ? report.overall_score
-          : null
-      }
       initialSession={
         session
           ? {
-              duration_seconds: session.duration_seconds,
               transcript: session.transcript,
               ended_at: session.ended_at,
             }

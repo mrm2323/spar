@@ -75,6 +75,7 @@ function isPromptArtifact(text: string): boolean {
 
 export function computeTranscriptStats(transcript: unknown): {
   userWordCount: number;
+  userMessageCount: number;
   assistantWordCount: number;
   userRatio: number;
   assistantRatio: number;
@@ -82,12 +83,14 @@ export function computeTranscriptStats(transcript: unknown): {
 } {
   const messages = normalizeTranscript(transcript);
   let userWords = 0;
+  let userMessageCount = 0;
   let assistantWords = 0;
   const fillerCounts = new Map<string, number>();
 
   if (!messages || messages.length === 0) {
     return {
       userWordCount: 0,
+      userMessageCount: 0,
       assistantWordCount: 0,
       userRatio: 50,
       assistantRatio: 50,
@@ -101,6 +104,7 @@ export function computeTranscriptStats(transcript: unknown): {
     const role = m.role || m.speaker;
     const words = text.toLowerCase().split(/\s+/).filter(Boolean);
     if (isUserRole(role)) {
+      if (words.length > 0) userMessageCount += 1;
       userWords += words.length;
       for (const w of words) {
         const clean = w.replace(/[^a-z']/g, "");
@@ -125,6 +129,7 @@ export function computeTranscriptStats(transcript: unknown): {
 
   return {
     userWordCount: userWords,
+    userMessageCount,
     assistantWordCount: assistantWords,
     userRatio,
     assistantRatio,

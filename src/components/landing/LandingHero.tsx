@@ -144,8 +144,20 @@ export function LandingHero({ isSignedIn = false }: LandingHeroProps) {
       </main>
 
       <footer className="relative z-10 border-t border-white/[0.06] bg-slate-950/40 px-5 py-5 text-center text-[11px] leading-relaxed text-slate-500 sm:px-6 sm:text-xs">
-        Kabir is an AI companion — not a human coach or therapist. Built for
-        when the stakes are high and the words matter.
+        <p>
+          Kabir is an AI companion — not a human coach or therapist. Built for
+          when the stakes are high and the words matter.
+        </p>
+        <p className="mt-3">
+          <a
+            href="mailto:kabir.spar.ai@gmail.com"
+            className="text-slate-400 underline decoration-slate-600 underline-offset-2 transition-colors hover:text-cyan-400"
+          >
+            Contact us
+          </a>
+          <span className="text-slate-600"> · </span>
+          <span className="text-slate-500">kabir.spar.ai@gmail.com</span>
+        </p>
       </footer>
     </div>
   );

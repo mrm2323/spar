@@ -10,7 +10,6 @@ type EnrichedSession = {
   duration_seconds: number | null;
   user_id: string;
   notes_preview: string | null;
-  confidence: number | null;
 };
 
 const IGNORED_TOKENS = new Set([
@@ -91,15 +90,12 @@ export async function GET() {
   const list = sessions || [];
   const sessionIds = list.map((s) => s.id);
 
-  const reportBySession: Record<
-    string,
-    { summary: string; overall_score: number | null }
-  > = {};
+  const reportBySession: Record<string, { summary: string }> = {};
 
   if (sessionIds.length > 0) {
     const { data: reports } = await supabase
       .from("forensics_reports")
-      .select("session_id, summary, overall_score, created_at")
+      .select("session_id, summary, created_at")
       .in("session_id", sessionIds)
       .order("created_at", { ascending: false });
 
@@ -109,7 +105,6 @@ export async function GET() {
         if (!reportBySession[sid]) {
           reportBySession[sid] = {
             summary: r.summary as string,
-            overall_score: r.overall_score as number | null,
           };
         }
       }
@@ -130,7 +125,6 @@ export async function GET() {
     return {
       ...s,
       notes_preview: firstSentence,
-      confidence: rep?.overall_score ?? null,
     };
   });
 
