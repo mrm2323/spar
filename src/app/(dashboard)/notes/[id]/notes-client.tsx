@@ -15,10 +15,8 @@ import { SessionOutcomeFollowUp } from "./session-outcome-followup";
 import { trackEvent } from "@/lib/analytics";
 
 const TRANSCRIPT_PREVIEW_MESSAGES = 8;
-const BG = "#0A0A0F";
-const CARD = "#111118";
-const CARD_BORDER = "#1E1E2E";
-const BEFORE_BG = "#12121A";
+const CARD = "rgba(11, 29, 62, 0.55)";
+const BEFORE_BG = "rgba(7, 26, 56, 0.7)";
 
 type Moment = { quote?: string; timestamp?: string; why?: string };
 type WordPattern = {
@@ -172,17 +170,17 @@ function ReadinessRing({
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span
-            className="font-mono text-[36px] font-bold leading-none tracking-tight text-zinc-50"
+            className="font-mono text-[36px] font-bold leading-none tracking-tight text-[#E2E8F0]"
             style={{ fontFamily: "var(--font-ibm-mono), ui-monospace, monospace" }}
           >
             {score != null ? score : "—"}
           </span>
         </div>
       </div>
-      <p className="mt-4 max-w-[16rem] text-center text-sm text-zinc-400">
+      <p className="mt-4 max-w-[16rem] text-center text-sm text-slate-400">
         {label}
       </p>
-      <p className="mt-1 text-center text-xs text-zinc-500">{sub}</p>
+      <p className="mt-1 text-center text-xs text-slate-500">{sub}</p>
     </div>
   );
 }
@@ -626,19 +624,16 @@ export function NotesClient({
 
   if (loading) {
     return (
-      <div
-        className="flex min-h-[60vh] flex-col items-center justify-center text-zinc-200"
-        style={{ background: BG }}
-      >
-        <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full border border-zinc-700/55 bg-zinc-900/55">
+      <div className="flex min-h-[60vh] flex-col items-center justify-center text-[#E2E8F0]">
+        <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full border border-slate-700/55 bg-slate-900/55">
           <span className="text-2xl font-medium">K</span>
         </div>
-        <p className="text-sm text-zinc-300">{message}</p>
+        <p className="text-sm text-slate-300">{message}</p>
         <div className="mt-4 flex gap-1">
           {[0, 1, 2].map((i) => (
             <div
               key={i}
-              className="h-1.5 w-1.5 animate-pulse rounded-full bg-zinc-500"
+              className="h-1.5 w-1.5 animate-pulse rounded-full bg-slate-500"
               style={{ animationDelay: `${i * 0.3}s` }}
             />
           ))}
@@ -646,7 +641,7 @@ export function NotesClient({
         {attempt > 10 && (
           <button
             onClick={() => router.push("/dashboard")}
-            className="mt-6 rounded border border-zinc-600/70 px-5 py-2 text-sm text-zinc-300 hover:border-cyan-500/60 hover:text-white"
+            className="mt-6 rounded border border-slate-600/70 px-5 py-2 text-sm text-slate-300 hover:border-cyan-500/60 hover:text-white"
           >
             Back to dashboard
           </button>
@@ -677,26 +672,23 @@ export function NotesClient({
   const durationLine = formatDurationDetailed(session?.duration_seconds);
 
   return (
-    <div
-      className="min-h-screen px-4 pb-16 pt-6 sm:px-6"
-      style={{ background: BG }}
-    >
+    <div className="px-4 pb-16 pt-6 sm:px-6">
       <div className="mx-auto max-w-lg">
         <Link
           href="/dashboard"
-          className="mb-6 inline-flex items-center gap-2 text-xs text-zinc-500 hover:text-zinc-200"
+          className="mb-6 inline-flex items-center gap-2 text-xs text-slate-400 hover:text-slate-200"
         >
           <ArrowLeft className="h-3 w-3" />
           Back
         </Link>
 
         <p
-          className="font-mono text-[11px] uppercase tracking-wider text-zinc-500"
+          className="font-mono text-[11px] uppercase tracking-wider text-slate-400"
           style={{ fontFamily: "var(--font-ibm-mono), ui-monospace, monospace" }}
         >
           {displayDate}
         </p>
-        <h1 className="mt-1 text-xl font-semibold tracking-tight text-zinc-50">
+        <h1 className="mt-1 text-xl font-semibold tracking-tight text-[#E2E8F0]">
           Kabir&apos;s notes
         </h1>
 
@@ -712,12 +704,12 @@ export function NotesClient({
         {/* SECTION 2 — KABIR'S TAKE */}
         <section className="mt-12 border-l-2 border-cyan-500/50 pl-4">
           <h2
-            className="font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-500"
+            className="font-mono text-[10px] uppercase tracking-[0.2em] text-slate-400"
             style={{ fontFamily: "var(--font-ibm-mono), ui-monospace, monospace" }}
           >
             Kabir&apos;s take
           </h2>
-          <p className="mt-3 text-[15px] leading-relaxed text-zinc-200">
+          <p className="mt-3 text-[15px] leading-relaxed text-[#E2E8F0]">
             {kabirTakeText
               ? renderWithDoubleQuoteHighlights(kabirTakeText)
               : "—"}
@@ -726,7 +718,7 @@ export function NotesClient({
 
         {/* SECTION 3 — YOUR MOMENTS */}
         <section className="mt-12">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
             Your moments
           </h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -741,22 +733,22 @@ export function NotesClient({
               <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
                 Strongest
               </p>
-              <p className="mt-2 text-[15px] font-medium leading-snug text-zinc-100">
+              <p className="mt-2 text-[15px] font-medium leading-snug text-[#E2E8F0]">
                 {strongest.quote ? (
                   <>
                     &ldquo;{strongest.quote}&rdquo;
                   </>
                 ) : (
-                  <span className="text-zinc-600">—</span>
+                  <span className="text-slate-500">—</span>
                 )}
               </p>
               {strongest.timestamp ? (
-                <span className="mt-2 inline-block rounded-full bg-zinc-800/80 px-2 py-0.5 font-mono text-[10px] text-zinc-400">
+                <span className="mt-2 inline-block rounded-full bg-slate-800/80 px-2 py-0.5 font-mono text-[10px] text-slate-400">
                   {strongest.timestamp}
                 </span>
               ) : null}
               {strongest.why ? (
-                <p className="mt-3 text-xs leading-relaxed text-zinc-500">
+                <p className="mt-3 text-xs leading-relaxed text-slate-400">
                   {strongest.why}
                 </p>
               ) : null}
@@ -772,22 +764,22 @@ export function NotesClient({
               <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-400">
                 Rethink
               </p>
-              <p className="mt-2 text-[15px] font-medium leading-snug text-zinc-100">
+              <p className="mt-2 text-[15px] font-medium leading-snug text-[#E2E8F0]">
                 {weakest.quote ? (
                   <>
                     &ldquo;{weakest.quote}&rdquo;
                   </>
                 ) : (
-                  <span className="text-zinc-600">—</span>
+                  <span className="text-slate-500">—</span>
                 )}
               </p>
               {weakest.timestamp ? (
-                <span className="mt-2 inline-block rounded-full bg-zinc-800/80 px-2 py-0.5 font-mono text-[10px] text-zinc-400">
+                <span className="mt-2 inline-block rounded-full bg-slate-800/80 px-2 py-0.5 font-mono text-[10px] text-slate-400">
                   {weakest.timestamp}
                 </span>
               ) : null}
               {weakest.why ? (
-                <p className="mt-3 text-xs leading-relaxed text-zinc-500">
+                <p className="mt-3 text-xs leading-relaxed text-slate-400">
                   {weakest.why}
                 </p>
               ) : null}
@@ -798,7 +790,7 @@ export function NotesClient({
         {/* SECTION 4 — GAME PLAN */}
         {actionItems.length > 0 ? (
           <section className="mt-12">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
               Your game plan
             </h2>
             <ul className="mt-4 space-y-3">
@@ -816,11 +808,11 @@ export function NotesClient({
                   >
                     {i + 1}
                   </span>
-                  <p className="flex-1 pt-1 text-sm leading-relaxed text-zinc-200">
+                  <p className="flex-1 pt-1 text-sm leading-relaxed text-[#E2E8F0]">
                     {item}
                   </p>
                   <div
-                    className="mt-1 h-4 w-4 shrink-0 rounded border border-zinc-600"
+                    className="mt-1 h-4 w-4 shrink-0 rounded border border-slate-600"
                     aria-hidden
                   />
                 </li>
@@ -831,7 +823,7 @@ export function NotesClient({
 
         {/* SECTION 5 — WORD PATTERNS */}
         <section className="mt-12">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
             Patterns Kabir noticed
           </h2>
           <div className="mt-4 grid grid-cols-3 gap-2 sm:gap-3">
@@ -847,8 +839,8 @@ export function NotesClient({
               >
                 {wordPattern.fillerCount}
               </p>
-              <p className="mt-2 text-[10px] text-zinc-500">filler words</p>
-              <p className="mt-1 font-mono text-[9px] leading-tight text-zinc-600">
+              <p className="mt-2 text-[10px] text-slate-400">filler words</p>
+              <p className="mt-1 font-mono text-[9px] leading-tight text-slate-500">
                 {wordPattern.topFillers.length
                   ? wordPattern.topFillers.slice(0, 5).join(", ")
                   : "—"}
@@ -866,8 +858,8 @@ export function NotesClient({
               >
                 {wordPattern.hedgeCount}
               </p>
-              <p className="mt-2 text-[10px] text-zinc-500">hedges</p>
-              <p className="mt-1 font-mono text-[9px] leading-tight text-zinc-600">
+              <p className="mt-2 text-[10px] text-slate-400">hedges</p>
+              <p className="mt-1 font-mono text-[9px] leading-tight text-slate-500">
                 {wordPattern.hedgePhrases.length
                   ? wordPattern.hedgePhrases.slice(0, 4).join(", ")
                   : "—"}
@@ -885,7 +877,7 @@ export function NotesClient({
                   <p className="mt-1 text-[10px] font-medium text-emerald-400/90">
                     none detected
                   </p>
-                  <p className="mt-1 text-[10px] text-zinc-500">
+                  <p className="mt-1 text-[10px] text-slate-400">
                     unnecessary apologies
                   </p>
                 </>
@@ -899,7 +891,7 @@ export function NotesClient({
                   >
                     {wordPattern.apologyCount}
                   </p>
-                  <p className="mt-2 text-[10px] leading-tight text-zinc-500">
+                  <p className="mt-2 text-[10px] leading-tight text-slate-400">
                     unnecessary apologies
                   </p>
                 </>
@@ -914,12 +906,12 @@ export function NotesClient({
           style={{ background: BEFORE_BG }}
         >
           <h2
-            className="font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-500"
+            className="font-mono text-[10px] uppercase tracking-[0.2em] text-slate-400"
             style={{ fontFamily: "var(--font-ibm-mono), ui-monospace, monospace" }}
           >
             Before you walk in
           </h2>
-          <p className="mt-4 text-[18px] font-medium leading-snug text-zinc-50 sm:text-[20px]">
+          <p className="mt-4 text-[18px] font-medium leading-snug text-[#E2E8F0] sm:text-[20px]">
             {beforeYouWalkIn || "—"}
           </p>
           <button
@@ -956,17 +948,17 @@ export function NotesClient({
           <button
             type="button"
             title="Coming soon"
-            className="flex w-full items-center justify-center rounded-lg border border-zinc-600 bg-transparent px-5 py-3.5 text-sm font-medium text-zinc-300 hover:border-zinc-500 hover:bg-zinc-900/40"
+            className="flex w-full items-center justify-center rounded-lg border border-slate-600 bg-transparent px-5 py-3.5 text-sm font-medium text-slate-300 hover:border-slate-500 hover:bg-slate-900/40"
           >
             Call me after the real thing
           </button>
-          <p className="text-center text-[10px] leading-relaxed text-zinc-600">
+          <p className="text-center text-[10px] leading-relaxed text-slate-500">
             Session {durationLine}. Your conversations are encrypted.
           </p>
         </section>
 
         {/* Transcript (collapsible) */}
-        <section className="mt-10 border-t border-zinc-800/80 pt-6">
+        <section className="mt-10 border-t border-slate-800/80 pt-6">
           <button
             type="button"
             onClick={() =>
@@ -979,7 +971,7 @@ export function NotesClient({
             className="flex w-full items-center justify-between py-2 text-left"
           >
             <span
-              className="font-mono text-[10px] uppercase tracking-wider text-zinc-500"
+              className="font-mono text-[10px] uppercase tracking-wider text-slate-400"
               style={{
                 fontFamily: "var(--font-ibm-mono), ui-monospace, monospace",
               }}
@@ -987,13 +979,13 @@ export function NotesClient({
               Full conversation
             </span>
             <ChevronDown
-              className={`h-4 w-4 text-zinc-500 transition-transform ${transcriptOpen ? "rotate-180" : ""}`}
+              className={`h-4 w-4 text-slate-400 transition-transform ${transcriptOpen ? "rotate-180" : ""}`}
             />
           </button>
           {transcriptOpen && (
             <div className="mt-4 space-y-3 text-sm">
               {messages.length === 0 ? (
-                <p className="text-zinc-500">Transcript not available yet.</p>
+                <p className="text-slate-400">Transcript not available yet.</p>
               ) : (
                 transcriptPreview.map((m, i) => {
                   const role = (m.role || "").toLowerCase();
@@ -1010,11 +1002,11 @@ export function NotesClient({
                         isHighlight ? "bg-emerald-950/20" : ""
                       }`}
                     >
-                      <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-600">
+                      <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500">
                         {isUser ? "You" : "Kabir"}
                       </span>
                       <p
-                        className="mt-0.5 whitespace-pre-wrap text-zinc-300"
+                        className="mt-0.5 whitespace-pre-wrap text-slate-300"
                       >
                         {content}
                       </p>
@@ -1028,7 +1020,7 @@ export function NotesClient({
                 <button
                   type="button"
                   onClick={() => setTranscriptExpanded(true)}
-                  className="mt-2 w-full rounded border border-zinc-700 py-2 text-xs text-cyan-400/90 hover:border-cyan-600/50"
+                  className="mt-2 w-full rounded border border-slate-700 py-2 text-xs text-cyan-400/90 hover:border-cyan-600/50"
                 >
                   Read full transcript ({messages.length} messages)
                 </button>
@@ -1039,7 +1031,7 @@ export function NotesClient({
                 <button
                   type="button"
                   onClick={() => setTranscriptExpanded(false)}
-                  className="mt-2 w-full py-2 text-xs text-zinc-500 hover:text-zinc-300"
+                  className="mt-2 w-full py-2 text-xs text-slate-400 hover:text-slate-300"
                 >
                   Show less
                 </button>
@@ -1058,7 +1050,7 @@ export function NotesClient({
           type="button"
           onClick={handleDelete}
           disabled={deleting}
-          className="mt-8 w-full text-center text-xs text-zinc-600 underline hover:text-zinc-400 disabled:opacity-50"
+          className="mt-8 w-full text-center text-xs text-slate-500 underline hover:text-slate-300 disabled:opacity-50"
         >
           {deleting ? "Deleting…" : "Delete this session"}
         </button>
