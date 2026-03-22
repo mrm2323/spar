@@ -8,8 +8,6 @@ import {
   ArrowRight,
   Paperclip,
   X,
-  Phone,
-  Check,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -69,13 +67,14 @@ export default function DashboardPage() {
   const [context, setContext] = useState("");
   const [loading, setLoading] = useState(false);
   const [showContext, setShowContext] = useState(false);
+  const [showAllSessions, setShowAllSessions] = useState(false);
   const [sessions, setSessions] = useState<PastSession[]>([]);
   const [pattern, setPattern] = useState<PatternInsight | null>(null);
   const [files, setFiles] = useState<ProcessedFile[]>([]);
   const [fileProcessing, setFileProcessing] = useState(false);
-  const [phone, setPhone] = useState("");
-  const [phoneSaved, setPhoneSaved] = useState(false);
-  const [linkedPhone, setLinkedPhone] = useState<string | null>(null);
+  // const [phone, setPhone] = useState("");
+  // const [phoneSaved, setPhoneSaved] = useState(false);
+  // const [linkedPhone, setLinkedPhone] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -87,12 +86,12 @@ export default function DashboardPage() {
       })
       .catch(() => {});
 
-    fetch("/api/user/phone")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.phone) setLinkedPhone(data.phone);
-      })
-      .catch(() => {});
+    // fetch("/api/user/phone")
+    //   .then((r) => r.json())
+    //   .then((data) => {
+    //     if (data.phone) setLinkedPhone(data.phone);
+    //   })
+    //   .catch(() => {});
   }, []);
 
   const handleFileUpload = useCallback(
@@ -129,6 +128,8 @@ export default function DashboardPage() {
   const removeFile = useCallback((index: number) => {
     setFiles((prev) => prev.filter((_, i) => i !== index));
   }, []);
+
+  const visibleSessions = showAllSessions ? sessions : sessions.slice(0, 3);
 
   async function startSession() {
     setLoading(true);
@@ -173,19 +174,39 @@ export default function DashboardPage() {
             type="button"
             onClick={startSession}
             disabled={loading}
-            className="group relative mx-auto mb-6 flex h-36 w-36 items-center justify-center rounded-full border-2 border-zinc-800 bg-zinc-900/80 transition-colors hover:border-emerald-600/40 disabled:opacity-50"
+            className="group relative mx-auto mb-6 flex h-44 w-44 items-center justify-center rounded-full border border-cyan-300/25 bg-cyan-400/5 transition-all duration-300 hover:border-cyan-300/45 disabled:opacity-50"
           >
+            <span className="pointer-events-none absolute inset-0 rounded-full bg-gradient-to-br from-cyan-400/25 to-blue-500/15 blur-2xl" />
+            <span className="pointer-events-none absolute inset-3 rounded-full border border-cyan-200/15" />
+            <span className="pointer-events-none absolute inset-0 rounded-full animate-pulse-ring border border-cyan-300/30" />
             {loading ? (
-              <Loader2 className="h-10 w-10 animate-spin text-zinc-500" />
+              <Loader2 className="relative z-10 h-10 w-10 animate-spin text-cyan-200" />
             ) : (
-              <Mic className="h-10 w-10 text-zinc-500 transition-colors group-hover:text-emerald-400" />
+              <div className="relative z-10 flex h-20 w-20 items-center justify-center rounded-full bg-cyan-400 text-slate-950 shadow-[0_0_28px_rgba(56,189,248,0.45)] transition-transform duration-300 group-hover:scale-[1.03]">
+                <Mic className="h-9 w-9" />
+              </div>
             )}
           </button>
+
+          {!loading && (
+            <div className="mb-6 flex items-end justify-center gap-1">
+              {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+                <span
+                  key={i}
+                  className="animate-waveform w-1.5 rounded-full bg-cyan-300/90"
+                  style={{
+                    height: `${8 + (i % 3) * 5}px`,
+                    animationDelay: `${i * 0.08}s`,
+                  }}
+                />
+              ))}
+            </div>
+          )}
 
           <h1 className="text-2xl font-semibold tracking-tight">
             {loading
               ? "Connecting to Kabir..."
-              : "What conversation are you avoiding?"}
+              : "What conversation are you looking forward to?"}
           </h1>
 
           {!loading && (
@@ -194,7 +215,7 @@ export default function DashboardPage() {
                 <button
                   type="button"
                   onClick={() => setShowContext(true)}
-                  className="text-sm text-zinc-500 hover:text-zinc-300"
+                  className="text-sm text-slate-400 hover:text-slate-200"
                 >
                   Add context for Kabir
                 </button>
@@ -206,7 +227,7 @@ export default function DashboardPage() {
                     placeholder="e.g. I need to tell my roommate I'm moving out..."
                     rows={2}
                     autoFocus
-                    className="w-full rounded-lg border border-zinc-800 bg-[#12121A] px-4 py-3 text-sm text-white placeholder-zinc-600 outline-none focus:border-zinc-700"
+                    className="w-full rounded-lg border border-slate-700/55 bg-slate-900/55 px-4 py-3 text-sm text-white placeholder-slate-500 outline-none focus:border-cyan-500/60"
                   />
 
                   <input
@@ -222,14 +243,14 @@ export default function DashboardPage() {
                       {files.map((f, i) => (
                         <div
                           key={i}
-                          className="flex items-center gap-2 rounded-lg border border-zinc-800/50 bg-zinc-900/30 px-3 py-1.5 text-xs text-zinc-400"
+                          className="flex items-center gap-2 rounded-lg border border-slate-700/40 bg-slate-900/25 px-3 py-1.5 text-xs text-slate-300"
                         >
                           <Paperclip className="h-3 w-3 shrink-0" />
                           <span className="min-w-0 truncate">{f.name}</span>
                           <button
                             type="button"
                             onClick={() => removeFile(i)}
-                            className="ml-auto shrink-0 text-zinc-600 hover:text-zinc-400"
+                            className="ml-auto shrink-0 text-slate-500 hover:text-slate-300"
                           >
                             <X className="h-3 w-3" />
                           </button>
@@ -242,7 +263,7 @@ export default function DashboardPage() {
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={fileProcessing}
-                    className="mt-2 flex items-center gap-1.5 text-xs text-zinc-600 hover:text-zinc-400 disabled:opacity-50"
+                    className="mt-2 flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-300 disabled:opacity-50"
                   >
                     {fileProcessing ? (
                       <Loader2 className="h-3 w-3 animate-spin" />
@@ -259,39 +280,51 @@ export default function DashboardPage() {
       </div>
 
       {/* MIDDLE — sessions or first-time */}
-      <div className="mt-4 border-t border-zinc-900 pt-10">
+      <div className="mt-4 border-t border-slate-800/70 pt-10">
         {sessions.length > 0 ? (
           <>
-            <h2 className="mb-5 text-xs font-medium uppercase tracking-widest text-zinc-500">
+            <h2 className="mb-5 text-xs font-medium uppercase tracking-widest text-slate-400">
               Your sessions with Kabir
             </h2>
             <div className="space-y-3">
-              {sessions.map((session) => (
+              {visibleSessions.map((session) => (
                 <Link
                   key={session.id}
                   href={`/notes/${session.id}`}
-                  className="block rounded-lg border border-zinc-800/80 bg-[#12121A] px-4 py-4 transition-colors hover:border-zinc-700"
+                  className="block rounded-lg border border-slate-600/50 bg-[#0b1d3e]/55 px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition-colors hover:border-cyan-500/50"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
-                      <p className="font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+                      <p className="font-mono text-[10px] uppercase tracking-wider text-slate-400">
                         {relativeSessionTime(session.ended_at)}
                       </p>
-                      <p className="mt-1 line-clamp-2 text-sm text-zinc-200">
+                      <p className="mt-1 line-clamp-2 text-sm text-slate-100">
                         {session.notes_preview ||
                           session.context ||
                           "Session"}
                       </p>
                     </div>
-                    <ArrowRight className="h-4 w-4 shrink-0 text-zinc-600" />
+                    <ArrowRight className="h-4 w-4 shrink-0 text-slate-500" />
                   </div>
                   <SessionConfidenceBar score={session.confidence ?? null} />
                 </Link>
               ))}
             </div>
+
+            {sessions.length > 3 && (
+              <div className="mt-4 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => setShowAllSessions((v) => !v)}
+                  className="rounded-full border border-slate-600/60 bg-slate-900/35 px-4 py-2 text-xs font-medium uppercase tracking-wider text-slate-300 transition-colors hover:border-cyan-500/60 hover:text-white"
+                >
+                  {showAllSessions ? "Show less" : "Read more"}
+                </button>
+              </div>
+            )}
           </>
         ) : (
-          <p className="text-center text-sm leading-relaxed text-zinc-500">
+          <p className="text-center text-sm leading-relaxed text-slate-400">
             First time? Tell Kabir what&apos;s coming up. He&apos;s heard it all.
           </p>
         )}
@@ -299,32 +332,33 @@ export default function DashboardPage() {
 
       {/* Pattern — 3+ sessions */}
       {pattern && pattern.total_sessions >= 3 && (
-        <div className="mt-10 border-t border-zinc-900 pt-10">
-          <h2 className="mb-3 text-xs font-medium uppercase tracking-widest text-zinc-500">
+        <div className="mt-10 border-t border-slate-800/70 pt-10">
+          <h2 className="mb-3 text-xs font-medium uppercase tracking-widest text-slate-400">
             Kabir&apos;s pattern
           </h2>
-          <div className="rounded-lg border border-zinc-800/80 bg-[#12121A] px-4 py-4 text-sm leading-relaxed text-zinc-300">
+          <div className="rounded-lg border border-slate-600/50 bg-[#0b1d3e]/55 px-4 py-4 text-sm leading-relaxed text-slate-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
             Across {pattern.total_sessions} sessions, Kabir noticed you tend to{" "}
             {pattern.weakness}. Keep practicing — this usually improves fast.
           </div>
         </div>
       )}
 
-      {/* Phone */}
-      <div className="mt-10 border-t border-zinc-900 pt-8">
-        <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-widest text-zinc-600">
+      {/*
+      Phone section intentionally commented out. Keep this code to restore quickly.
+      <div className="mt-10 border-t border-slate-800/70 pt-8">
+        <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-widest text-slate-500">
           <Phone className="h-3 w-3" />
           Call Kabir by phone
         </div>
         {linkedPhone ? (
-          <p className="mt-3 text-sm text-zinc-500">
+          <p className="mt-3 text-sm text-slate-400">
             Your phone{" "}
-            <span className="text-zinc-300">{linkedPhone}</span> is linked.
+            <span className="text-slate-200">{linkedPhone}</span> is linked.
             Phone sessions appear in your list above.
           </p>
         ) : (
           <div className="mt-3">
-            <p className="mb-3 text-sm text-zinc-500">
+            <p className="mb-3 text-sm text-slate-400">
               Link your number so phone calls show up here with notes.
             </p>
             <div className="flex max-w-xs items-center gap-2">
@@ -336,7 +370,7 @@ export default function DashboardPage() {
                   setPhoneSaved(false);
                 }}
                 placeholder="+1 (555) 123-4567"
-                className="flex-1 rounded-lg border border-zinc-800 bg-[#12121A] px-3 py-2 text-sm text-white placeholder-zinc-600 outline-none focus:border-zinc-700"
+                className="flex-1 rounded-lg border border-slate-700/55 bg-slate-900/55 px-3 py-2 text-sm text-white placeholder-slate-500 outline-none focus:border-cyan-500/60"
               />
               <button
                 type="button"
@@ -361,7 +395,7 @@ export default function DashboardPage() {
                   }
                 }}
                 disabled={phoneSaved}
-                className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-400 hover:border-zinc-600 hover:text-white disabled:opacity-50"
+                className="rounded-lg border border-slate-600/70 px-3 py-2 text-sm text-slate-300 hover:border-cyan-500/60 hover:text-white disabled:opacity-50"
               >
                 {phoneSaved ? (
                   <Check className="h-4 w-4 text-emerald-500" />
@@ -373,6 +407,7 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+      */}
     </div>
   );
 }

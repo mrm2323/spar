@@ -99,7 +99,7 @@ export async function POST(req: Request) {
             voiceId: "Rohan",
           },
           firstMessage:
-            "Hey. It's Kabir. What conversation are you avoiding?",
+            "Hey. It's Kabir. What conversation are you looking forward to?",
           maxDurationSeconds: 600,
           startSpeakingPlan: {
             waitSeconds: 0.6,

@@ -90,7 +90,7 @@ export function KabirChat() {
     // Add welcome message
     setMessages([{
       role: 'assistant',
-      content: "It's Kabir. What conversation are you avoiding?",
+      content: "It's Kabir. What conversation are you looking forward to?",
       timestamp: new Date(),
     }]);
   };
@@ -241,7 +241,7 @@ export function KabirChat() {
               It's Kabir
             </h2>
             <p className="text-gray-500 dark:text-gray-400 max-w-sm">
-              What conversation are you avoiding? Give me the person and the situation. Then we run it.
+              What conversation are you looking forward to? Give me the person and the situation. Then we run it.
             </p>
           </div>
         ) : (

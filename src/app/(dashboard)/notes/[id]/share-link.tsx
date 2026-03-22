@@ -19,7 +19,7 @@ export function ShareLink() {
   return (
     <button
       onClick={handleShare}
-      className="text-xs text-zinc-600 transition-colors hover:text-zinc-400"
+      className="text-xs text-slate-500 transition-colors hover:text-slate-300"
     >
       {copied ? "Link copied!" : "Know someone who needs Kabir? Share this."}
     </button>

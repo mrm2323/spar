@@ -244,15 +244,15 @@ export function NotesClient({
   if (loading) {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center text-[#E2E8F0]">
-        <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full border border-zinc-800 bg-[#12121A]">
+        <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full border border-slate-700/55 bg-slate-900/55">
           <span className="text-2xl font-medium">K</span>
         </div>
-        <p className="text-sm text-zinc-400">{message}</p>
+        <p className="text-sm text-slate-300">{message}</p>
         <div className="mt-4 flex gap-1">
           {[0, 1, 2].map((i) => (
             <div
               key={i}
-              className="h-1.5 w-1.5 animate-pulse rounded-full bg-zinc-600"
+              className="h-1.5 w-1.5 animate-pulse rounded-full bg-slate-500"
               style={{ animationDelay: `${i * 0.3}s` }}
             />
           ))}
@@ -260,7 +260,7 @@ export function NotesClient({
         {attempt > 10 && (
           <button
             onClick={() => router.push("/dashboard")}
-            className="mt-6 rounded border border-zinc-700 px-5 py-2 text-sm text-zinc-400 hover:text-white"
+            className="mt-6 rounded border border-slate-600/70 px-5 py-2 text-sm text-slate-300 hover:border-cyan-500/60 hover:text-white"
           >
             Back to dashboard
           </button>
@@ -292,13 +292,13 @@ export function NotesClient({
     <div className="mx-auto max-w-xl">
       <Link
         href="/dashboard"
-        className="mb-8 inline-flex items-center gap-2 text-xs text-zinc-500 hover:text-zinc-300"
+        className="mb-8 inline-flex items-center gap-2 text-xs text-slate-400 hover:text-slate-200"
       >
         <ArrowLeft className="h-3 w-3" />
         Back
       </Link>
 
-      <p className="font-mono text-[11px] uppercase tracking-wider text-zinc-500">
+      <p className="font-mono text-[11px] uppercase tracking-wider text-slate-400">
         {displayDate}
       </p>
       <h1 className="mt-1 text-xl font-semibold tracking-tight text-[#E2E8F0]">
@@ -308,25 +308,22 @@ export function NotesClient({
       <div className="mt-10 space-y-10">
         {/* SECTION 1 */}
         <section>
-          <h2 className="mb-3 text-[11px] font-medium uppercase tracking-widest text-zinc-500">
+          <h2 className="mb-3 text-[11px] font-medium uppercase tracking-widest text-slate-400">
             Kabir&apos;s take
           </h2>
-          <div
-            className="rounded-lg px-5 py-4 text-[15px] leading-relaxed text-[#E2E8F0]"
-            style={{ backgroundColor: "#12121A" }}
-          >
-            <p className="font-[450] text-zinc-100">{kabirsTake}</p>
+          <div className="rounded-lg border border-slate-600/50 bg-[#0b1d3e]/55 px-5 py-4 text-[15px] leading-relaxed text-[#E2E8F0] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+            <p className="font-[450] text-slate-50">{kabirsTake}</p>
           </div>
         </section>
 
         {/* SECTION 2 */}
         <section>
-          <h2 className="mb-3 text-[11px] font-medium uppercase tracking-widest text-zinc-500">
+          <h2 className="mb-3 text-[11px] font-medium uppercase tracking-widest text-slate-400">
             Your words
           </h2>
           <div className="grid gap-4 sm:grid-cols-2">
             <div
-              className="rounded-lg border-l-2 border-emerald-500/70 bg-[#12121A] px-4 py-3"
+              className="rounded-lg border-l-2 border-emerald-500/70 bg-[#0b1d3e]/45 px-4 py-3"
               style={{ borderTopWidth: 0, borderRightWidth: 0, borderBottomWidth: 0 }}
             >
               <p className="text-[10px] font-medium uppercase tracking-wider text-emerald-500/90">
@@ -334,13 +331,13 @@ export function NotesClient({
               </p>
               <p className="mt-2 text-sm text-[#E2E8F0]">{landed.quote}</p>
               {landed.rest ? (
-                <p className="mt-2 text-xs leading-relaxed text-zinc-500">
+                <p className="mt-2 text-xs leading-relaxed text-slate-400">
                   {landed.rest}
                 </p>
               ) : null}
             </div>
             <div
-              className="rounded-lg border-l-2 border-amber-500/70 bg-[#12121A] px-4 py-3"
+              className="rounded-lg border-l-2 border-amber-500/70 bg-[#0b1d3e]/45 px-4 py-3"
               style={{ borderTopWidth: 0, borderRightWidth: 0, borderBottomWidth: 0 }}
             >
               <p className="text-[10px] font-medium uppercase tracking-wider text-amber-500/90">
@@ -348,7 +345,7 @@ export function NotesClient({
               </p>
               <p className="mt-2 text-sm text-[#E2E8F0]">{rethink.quote}</p>
               {rethink.rest ? (
-                <p className="mt-2 text-xs leading-relaxed text-zinc-500">
+                <p className="mt-2 text-xs leading-relaxed text-slate-400">
                   {rethink.rest}
                 </p>
               ) : null}
@@ -358,10 +355,10 @@ export function NotesClient({
 
         {/* SECTION 3 */}
         <section>
-          <h2 className="mb-3 text-[11px] font-medium uppercase tracking-widest text-zinc-500">
+          <h2 className="mb-3 text-[11px] font-medium uppercase tracking-widest text-slate-400">
             Before you walk in
           </h2>
-          <div className="rounded-lg border border-zinc-800/80 bg-[#0A0A0F] px-5 py-5">
+          <div className="rounded-lg border border-slate-600/50 bg-[#071a38]/70 px-5 py-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
             <p className="text-lg font-medium leading-snug text-[#E2E8F0]">
               {beforeYouWalkIn}
             </p>
@@ -373,19 +370,19 @@ export function NotesClient({
           <button
             type="button"
             onClick={() => setDetailsOpen((o) => !o)}
-            className="flex w-full items-center justify-between border-b border-zinc-800/50 py-2 text-left"
+            className="flex w-full items-center justify-between border-b border-slate-700/40 py-2 text-left"
           >
-            <span className="text-[11px] font-medium uppercase tracking-widest text-zinc-500">
+            <span className="text-[11px] font-medium uppercase tracking-widest text-slate-400">
               Session details
             </span>
             <ChevronDown
-              className={`h-4 w-4 text-zinc-500 transition-transform ${detailsOpen ? "rotate-180" : ""}`}
+              className={`h-4 w-4 text-slate-400 transition-transform ${detailsOpen ? "rotate-180" : ""}`}
             />
           </button>
           {detailsOpen && (
-            <div className="mt-4 space-y-4 font-mono text-xs text-zinc-400">
+            <div className="mt-4 space-y-4 font-mono text-xs text-slate-300">
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-zinc-600">
+                <p className="text-[10px] uppercase tracking-wider text-slate-500">
                   Duration
                 </p>
                 <p className="mt-1 text-[#E2E8F0]">
@@ -393,7 +390,7 @@ export function NotesClient({
                 </p>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-zinc-600">
+                <p className="text-[10px] uppercase tracking-wider text-slate-500">
                   Kabir&apos;s read on your confidence
                 </p>
                 <div className="mt-2">
@@ -401,7 +398,7 @@ export function NotesClient({
                 </div>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-zinc-600">
+                <p className="text-[10px] uppercase tracking-wider text-slate-500">
                   Talk time
                 </p>
                 <p className="mt-1 text-[#E2E8F0]">
@@ -409,7 +406,7 @@ export function NotesClient({
                 </p>
               </div>
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-zinc-600">
+                <p className="text-[10px] uppercase tracking-wider text-slate-500">
                   Filler words
                 </p>
                 <p className="mt-1 text-[#E2E8F0]">
@@ -429,19 +426,19 @@ export function NotesClient({
           <button
             type="button"
             onClick={() => setTranscriptOpen((o) => !o)}
-            className="flex w-full items-center justify-between border-b border-zinc-800/50 py-2 text-left"
+            className="flex w-full items-center justify-between border-b border-slate-700/40 py-2 text-left"
           >
-            <span className="text-[11px] font-medium uppercase tracking-widest text-zinc-500">
+            <span className="text-[11px] font-medium uppercase tracking-widest text-slate-400">
               Full conversation
             </span>
             <ChevronDown
-              className={`h-4 w-4 text-zinc-500 transition-transform ${transcriptOpen ? "rotate-180" : ""}`}
+              className={`h-4 w-4 text-slate-400 transition-transform ${transcriptOpen ? "rotate-180" : ""}`}
             />
           </button>
           {transcriptOpen && (
             <div className="mt-4 space-y-3 text-sm">
               {messages.length === 0 ? (
-                <p className="text-zinc-500">Transcript not available yet.</p>
+                <p className="text-slate-400">Transcript not available yet.</p>
               ) : (
                 messages.map((m, i) => {
                   const role = (m.role || "").toLowerCase();
@@ -459,7 +456,7 @@ export function NotesClient({
                       }`}
                     >
                       <span
-                        className="text-[10px] font-mono uppercase tracking-wider text-zinc-600"
+                        className="text-[10px] font-mono uppercase tracking-wider text-slate-500"
                       >
                         {isUser ? "You" : "Kabir"}
                       </span>
@@ -490,13 +487,13 @@ export function NotesClient({
           </Link>
           <span
             title="Coming soon"
-            className="inline-flex flex-1 cursor-not-allowed items-center justify-center rounded border border-zinc-700 px-5 py-3 text-center text-sm text-zinc-500"
+            className="inline-flex flex-1 cursor-not-allowed items-center justify-center rounded border border-slate-600/70 px-5 py-3 text-center text-sm text-slate-400"
           >
             Call me after
           </span>
         </div>
 
-        <p className="text-center text-[11px] text-zinc-600">
+        <p className="text-center text-[11px] text-slate-500">
           Your conversations are encrypted and never shared.
         </p>
 
@@ -504,7 +501,7 @@ export function NotesClient({
           type="button"
           onClick={handleDelete}
           disabled={deleting}
-          className="w-full text-center text-xs text-zinc-600 underline hover:text-zinc-400 disabled:opacity-50"
+          className="w-full text-center text-xs text-slate-500 underline hover:text-slate-300 disabled:opacity-50"
         >
           {deleting ? "Deleting…" : "Delete this session"}
         </button>

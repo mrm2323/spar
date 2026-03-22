@@ -38,7 +38,7 @@ export function EarlyAccessForm() {
   }
 
   return (
-    <div className="mt-12 w-full max-w-sm">
+    <div className="mt-10 w-full max-w-md">
       <form onSubmit={onSubmit} className="flex w-full gap-2">
         <input
           type="email"
@@ -47,26 +47,16 @@ export function EarlyAccessForm() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="your@email.com"
-          className="flex-1 rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-3 text-sm text-white placeholder-zinc-600 outline-none transition-colors focus:border-zinc-600"
+          className="flex-1 rounded-xl border border-white/10 bg-slate-900/70 px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition-colors focus:border-cyan-300/45"
         />
         <button
           type="submit"
           disabled={status === "submitting"}
-          className="whitespace-nowrap rounded-lg bg-white px-5 py-3 text-sm font-medium text-zinc-950 transition-colors hover:bg-zinc-200 disabled:opacity-60"
+          className="whitespace-nowrap rounded-xl bg-cyan-400 px-5 py-3 text-sm font-semibold text-slate-950 transition-colors hover:bg-cyan-300 disabled:opacity-60"
         >
           {status === "submitting" ? "Submitting..." : "Get early access"}
         </button>
       </form>
-
-      <div className="mt-3 text-xs text-zinc-600">
-        <button
-          type="button"
-          onClick={() => router.push("/sign-in")}
-          className="hover:text-zinc-300"
-        >
-          Prefer to start now? Sign in.
-        </button>
-      </div>
 
       {status === "error" && (
         <p className="mt-3 text-xs text-red-400">{error}</p>

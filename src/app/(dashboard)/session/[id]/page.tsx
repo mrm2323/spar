@@ -96,7 +96,7 @@ export default function SessionPage() {
           provider: "vapi",
           voiceId: "Rohan",
         },
-        firstMessage: "Hey. It's Kabir. What conversation are you avoiding?",
+        firstMessage: "Hey. It's Kabir. What conversation are you looking forward to?",
         maxDurationSeconds: 600,
         startSpeakingPlan: {
           waitSeconds: 0.6,
@@ -210,7 +210,7 @@ export default function SessionPage() {
         <p className="text-sm text-red-400">{errorMsg}</p>
         <button
           onClick={() => router.push("/dashboard")}
-          className="mt-4 text-sm text-zinc-500 transition-colors hover:text-white"
+          className="mt-4 text-sm text-slate-400 transition-colors hover:text-white"
         >
           Back
         </button>
@@ -221,12 +221,12 @@ export default function SessionPage() {
   if (status === "ended") {
     return (
       <div className="flex min-h-[80vh] flex-col items-center justify-center text-center">
-        <p className="text-sm text-zinc-400">Kabir is writing his notes...</p>
+        <p className="text-sm text-slate-300">Kabir is writing his notes...</p>
         <div className="mt-4 flex gap-1">
           {[0, 1, 2].map((i) => (
             <div
               key={i}
-              className="h-1.5 w-1.5 animate-pulse rounded-full bg-zinc-600"
+              className="h-1.5 w-1.5 animate-pulse rounded-full bg-slate-500"
               style={{ animationDelay: `${i * 0.3}s` }}
             />
           ))}
@@ -238,7 +238,7 @@ export default function SessionPage() {
   if (status === "trust" && id) {
     return (
       <div className="flex min-h-[80vh] flex-col items-center justify-center px-6 text-center">
-        <p className="max-w-sm text-sm leading-relaxed text-zinc-300">
+        <p className="max-w-sm text-sm leading-relaxed text-slate-200">
           This conversation stays between you and Kabir.
         </p>
         <button
@@ -260,12 +260,12 @@ export default function SessionPage() {
             {[0, 1, 2].map((i) => (
               <div
                 key={i}
-                className="h-1.5 w-1.5 animate-pulse rounded-full bg-zinc-600"
+                className="h-1.5 w-1.5 animate-pulse rounded-full bg-slate-500"
                 style={{ animationDelay: `${i * 0.3}s` }}
               />
             ))}
           </div>
-          <p className="text-sm text-zinc-500">Connecting to Kabir...</p>
+          <p className="text-sm text-slate-400">Connecting to Kabir...</p>
         </div>
       )}
 
@@ -278,7 +278,7 @@ export default function SessionPage() {
                 className={`w-0.5 rounded-full transition-all duration-300 ${
                   speaking === "kabir"
                     ? "animate-waveform bg-emerald-500/60"
-                    : "bg-zinc-700"
+                    : "bg-slate-600"
                 }`}
                 style={{
                   height: speaking === "kabir" ? `${16 + (i % 3) * 6}px` : "8px",
@@ -288,11 +288,11 @@ export default function SessionPage() {
             ))}
           </div>
 
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm text-slate-400">
             {speaking === "kabir" ? "Kabir is speaking..." : "Listening..."}
           </p>
 
-          <p className="mt-2 font-mono text-xs text-zinc-700">
+          <p className="mt-2 font-mono text-xs text-slate-500">
             {formatTime(elapsed)}
           </p>
 
@@ -308,7 +308,7 @@ export default function SessionPage() {
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={attachStatus === "processing"}
-              className="flex items-center gap-1.5 text-xs text-zinc-600 transition-colors hover:text-zinc-400 disabled:opacity-50"
+              className="flex items-center gap-1.5 text-xs text-slate-500 transition-colors hover:text-slate-300 disabled:opacity-50"
             >
               {attachStatus === "processing" ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -326,7 +326,7 @@ export default function SessionPage() {
 
             <button
               onClick={endSession}
-              className="text-xs text-zinc-600 transition-colors hover:text-zinc-400"
+              className="text-xs text-slate-500 transition-colors hover:text-slate-300"
             >
               End session
             </button>

@@ -8,12 +8,15 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen bg-[#0A0A0F]">
-      <nav className="fixed top-0 z-50 w-full border-b border-zinc-900/80 bg-[#0A0A0F]/90 backdrop-blur-md">
+    <div className="relative min-h-screen overflow-hidden bg-[#020617]">
+      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(14,165,233,0.12),transparent_35%),radial-gradient(circle_at_82%_70%,rgba(59,130,246,0.12),transparent_38%),linear-gradient(180deg,#020617_0%,#08142a_50%,#020617_100%)]" />
+      <div className="pointer-events-none fixed inset-0 opacity-[0.06] [background-image:linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] [background-size:34px_34px]" />
+
+      <nav className="fixed top-0 z-50 w-full border-b border-slate-800/70 bg-[#050c1d]/80 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-6">
           <Link
             href="/dashboard"
-            className="text-lg font-semibold tracking-tight text-white"
+            className="text-lg font-semibold tracking-tight text-cyan-300"
           >
             spar
           </Link>
@@ -26,9 +29,9 @@ export default function DashboardLayout({
           />
         </div>
       </nav>
-      <main className="mx-auto max-w-5xl px-6 pt-20 pb-8">{children}</main>
-      <footer className="mx-auto max-w-5xl px-6 pb-10">
-        <p className="flex items-center justify-center gap-1.5 text-center text-[11px] text-zinc-600">
+      <main className="relative z-10 mx-auto max-w-5xl px-6 pt-20 pb-8">{children}</main>
+      <footer className="relative z-10 mx-auto max-w-5xl px-6 pb-10">
+        <p className="flex items-center justify-center gap-1.5 text-center text-[11px] text-slate-500">
           <Lock className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
           End-to-end encrypted. Your conversations are private.
         </p>
