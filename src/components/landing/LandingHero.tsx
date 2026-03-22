@@ -38,7 +38,7 @@ export function LandingHero({ isSignedIn = false }: LandingHeroProps) {
           SPAR
         </Link>
         <nav
-          className="flex items-center gap-2 sm:gap-3"
+          className="flex min-h-[40px] items-center justify-end gap-2 sm:gap-3"
           aria-label="Account"
         >
           {isSignedIn ? (
@@ -48,22 +48,7 @@ export function LandingHero({ isSignedIn = false }: LandingHeroProps) {
             >
               Profile
             </Link>
-          ) : (
-            <>
-              <Link
-                href="/sign-in"
-                className="rounded-lg border border-white/12 bg-white/[0.04] px-3 py-2 text-sm font-medium text-slate-200 transition-colors hover:border-white/20 hover:bg-white/[0.07] hover:text-white sm:px-4"
-              >
-                Sign in
-              </Link>
-              <Link
-                href="/sign-up"
-                className="rounded-lg bg-gradient-to-b from-cyan-300 to-cyan-400 px-3 py-2 text-sm font-semibold text-slate-950 shadow-[0_0_0_1px_rgba(255,255,255,0.08)_inset,0_8px_24px_rgba(34,211,238,0.22)] transition-all hover:from-cyan-200 hover:to-cyan-300 sm:px-4"
-              >
-                Create account
-              </Link>
-            </>
-          )}
+          ) : null}
         </nav>
       </header>
 
@@ -148,6 +133,24 @@ export function LandingHero({ isSignedIn = false }: LandingHeroProps) {
           Kabir is an AI companion — not a human coach or therapist. Built for
           when the stakes are high and the words matter.
         </p>
+        {!isSignedIn ? (
+          <p className="mt-4 text-slate-600">
+            Already invited to the beta?{" "}
+            <Link
+              href="/sign-in"
+              className="text-slate-400 underline decoration-slate-600 underline-offset-2 transition-colors hover:text-cyan-400"
+            >
+              Sign in
+            </Link>
+            {" · "}
+            <Link
+              href="/sign-up"
+              className="text-slate-400 underline decoration-slate-600 underline-offset-2 transition-colors hover:text-cyan-400"
+            >
+              Create account
+            </Link>
+          </p>
+        ) : null}
         <p className="mt-3">
           <a
             href="mailto:kabir.spar.ai@gmail.com"

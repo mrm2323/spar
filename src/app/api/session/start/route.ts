@@ -1,4 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
+import { auth, clerkClient } from "@clerk/nextjs/server";
 import { createSupabaseAdmin } from "@/lib/supabase/server";
 import { buildFullKabirContext } from "@/lib/kabir/memory";
 import {
@@ -88,6 +88,16 @@ export async function POST(req: Request) {
       }
     }
 
+    let userFirstName: string | undefined;
+    try {
+      const client = await clerkClient();
+      const clerkUser = await client.users.getUser(userId);
+      const n = clerkUser.firstName?.trim();
+      userFirstName = n || undefined;
+    } catch (e) {
+      console.warn("[session/start] Could not load Clerk name:", e);
+    }
+
     const memoryEnabled = await getMemoryPreference(userId);
     const memoryText = memoryEnabled
       ? await buildFullKabirContext(userId, supabase, {
@@ -99,6 +109,7 @@ export async function POST(req: Request) {
       scenarioRaw: effectiveContext || undefined,
       channel: "web",
       durationSeconds: allowedSessionSeconds,
+      userName: userFirstName,
       userMemory: memoryText.trim() ? memoryText : undefined,
       resumeContext: resumeBlock || undefined,
     });
@@ -124,6 +135,24 @@ export async function POST(req: Request) {
 
     const hasHistory = memoryEnabled && memoryText.trim().length > 40;
 
+    const name = userFirstName;
+    let firstMessage: string;
+    if (effectiveMode === "restart") {
+      firstMessage = name
+        ? `Hey ${name} — let's run this from the top. Give me your opening line when you're ready.`
+        : "Hey. Let's run this from the top. Give me your opening line when you're ready.";
+    } else if (effectiveResumeSessionId) {
+      firstMessage = defaultResumeFirstMessage(name);
+    } else if (hasHistory) {
+      firstMessage = name
+        ? `Hey ${name} — it's Kabir. I'm with you. What's the conversation today?`
+        : "Hey — it's Kabir. I'm with you. What's the conversation today?";
+    } else {
+      firstMessage = name
+        ? `Hey, ${name}. It's Kabir. I'm really glad you're here. What conversation are you looking forward to?`
+        : "Hey. It's Kabir. I'm really glad you're here. What conversation are you looking forward to?";
+    }
+
     return NextResponse.json({
       sessionId: session.id,
       systemPrompt,
@@ -133,13 +162,7 @@ export async function POST(req: Request) {
         sessionSecondsAllocated: allowedSessionSeconds,
         sessionTimeMessage: `You have ${formatRemainingTime(usage.remainingSeconds)} left in your free practice bank.`,
       },
-      firstMessage: effectiveMode === "restart"
-        ? "Hey. Let's run this from the top. Give me your opening line when you're ready."
-        : effectiveResumeSessionId
-        ? defaultResumeFirstMessage()
-        : hasHistory
-          ? "Hey — it's Kabir. I'm with you. What's the conversation today?"
-          : "Hey. It's Kabir. What conversation are you looking forward to?",
+      firstMessage,
     });
   } catch (err) {
     console.error("Session start error:", err);

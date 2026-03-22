@@ -10,6 +10,7 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
+import { useUser } from "@clerk/nextjs";
 import { trackEvent } from "@/lib/analytics";
 
 interface PastSession {
@@ -57,6 +58,9 @@ interface ProcessedFile {
 }
 
 function DashboardInner() {
+  const { user, isLoaded: userLoaded } = useUser();
+  const firstName = user?.firstName?.trim() || null;
+
   const router = useRouter();
   const searchParams = useSearchParams();
   const [context, setContext] = useState("");
@@ -358,7 +362,17 @@ function DashboardInner() {
             </p>
           ) : null}
 
-          <h1 className="mt-8 text-4xl font-bold tracking-tight leading-tight">
+          {!loading && userLoaded ? (
+            <p className="mx-auto mt-8 max-w-2xl px-2 text-center text-[1.35rem] font-semibold leading-snug tracking-tight text-cyan-50/95 sm:text-2xl">
+              {firstName
+                ? `Hi, ${firstName}`
+                : "Hi there"}
+            </p>
+          ) : null}
+
+          <h1
+            className={`text-4xl font-bold tracking-tight leading-tight ${!loading && userLoaded ? "mt-3" : "mt-8"}`}
+          >
             {loading
               ? "Connecting to Kabir..."
               : "What conversation are you looking forward to?"}

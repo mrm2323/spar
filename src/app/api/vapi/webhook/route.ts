@@ -1,4 +1,5 @@
 import { after } from "next/server";
+import { clerkClient } from "@clerk/nextjs/server";
 import { createSupabaseAdmin } from "@/lib/supabase/server";
 import { generateKabirNotes } from "@/lib/forensics/generate";
 import { buildFullKabirContext } from "@/lib/kabir/memory";
@@ -179,10 +180,22 @@ export async function POST(req: Request) {
       const reachedCap = usage ? allowedSessionSeconds <= 0 : false;
       const effectiveDurationSeconds = reachedCap ? 45 : allowedSessionSeconds;
 
+      let phoneUserFirstName: string | undefined;
+      if (resolvedUserId.startsWith("user_")) {
+        try {
+          const c = await clerkClient();
+          const u = await c.users.getUser(resolvedUserId);
+          phoneUserFirstName = u.firstName?.trim() || undefined;
+        } catch {
+          /* noop */
+        }
+      }
+
       const systemPrompt = buildKabirPrompt({
         scenarioRaw: undefined,
         channel: "phone",
         durationSeconds: effectiveDurationSeconds,
+        userName: phoneUserFirstName,
         userMemory: memoryText.trim() ? memoryText : undefined,
       });
 
@@ -219,8 +232,12 @@ export async function POST(req: Request) {
           firstMessage: reachedCap
             ? `Hey, it is Kabir. You have completed your 15 free practice minutes for now. Thanks for showing up and putting in the work. Come back when your next practice window is available.`
             : usage
-              ? `Hey. It is Kabir. You have ${formatRemainingTime(usage.remainingSeconds)} left in your current practice bank. What conversation are you looking forward to?`
-              : "Hey. It's Kabir. What conversation are you looking forward to?",
+              ? phoneUserFirstName
+                ? `Hey ${phoneUserFirstName}, it is Kabir. You have ${formatRemainingTime(usage.remainingSeconds)} left in your current practice bank. What conversation are you looking forward to?`
+                : `Hey. It is Kabir. You have ${formatRemainingTime(usage.remainingSeconds)} left in your current practice bank. What conversation are you looking forward to?`
+              : phoneUserFirstName
+                ? `Hey ${phoneUserFirstName}. It's Kabir. I'm really glad you're here. What conversation are you looking forward to?`
+                : "Hey. It's Kabir. What conversation are you looking forward to?",
           maxDurationSeconds: effectiveDurationSeconds,
           startSpeakingPlan: {
             waitSeconds: 0.6,

@@ -105,6 +105,10 @@ Ask what shifted or what they want to tighten, then go straight into another rep
 `.trim();
 }
 
-export function defaultResumeFirstMessage(): string {
+export function defaultResumeFirstMessage(firstName?: string | null): string {
+  const n = firstName?.trim();
+  if (n) {
+    return `Hey ${n} — we're picking this back up. What's different since last time, or what do you want to run again?`;
+  }
   return "Hey — we're picking this back up. What's different since last time, or what do you want to run again?";
 }
