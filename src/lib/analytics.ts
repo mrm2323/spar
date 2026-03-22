@@ -18,7 +18,6 @@ export function initAnalytics(userId?: string | null): void {
     // Keep replay and analytics on the same Amplitude instance/device identity.
     const replay = sessionReplayPlugin({
       sampleRate: 1,
-      captureScroll: true,
       forceSessionTracking: false,
     });
     amplitude.add(replay);
