@@ -1,9 +1,11 @@
 "use client";
 
 import * as amplitude from "@amplitude/analytics-browser";
+import { sessionReplayPlugin } from "@amplitude/plugin-session-replay-browser";
 
 const AMPLITUDE_API_KEY = process.env.NEXT_PUBLIC_AMPLITUDE_API_KEY?.trim() || "";
 let initialized = false;
+let replayAttached = false;
 
 function canSendAnalytics(): boolean {
   return typeof window !== "undefined" && AMPLITUDE_API_KEY.length > 0;
@@ -11,6 +13,17 @@ function canSendAnalytics(): boolean {
 
 export function initAnalytics(userId?: string | null): void {
   if (!canSendAnalytics() || initialized) return;
+
+  if (!replayAttached) {
+    // Keep replay and analytics on the same Amplitude instance/device identity.
+    const replay = sessionReplayPlugin({
+      sampleRate: 1,
+      captureScroll: true,
+      forceSessionTracking: false,
+    });
+    amplitude.add(replay);
+    replayAttached = true;
+  }
 
   amplitude.init(AMPLITUDE_API_KEY, userId ?? undefined, {
     autocapture: true,
