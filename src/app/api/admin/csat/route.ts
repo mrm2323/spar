@@ -3,6 +3,13 @@ import { NextResponse } from "next/server";
 
 type RangeKey = "1h" | "24h" | "7d" | "30d";
 
+type OutcomeRow = {
+  session_id: string;
+  outcome: "well" | "tough";
+  user_note: string | null;
+  created_at: string;
+};
+
 function toRangeKey(value: string | null): RangeKey {
   if (value === "1h" || value === "24h" || value === "7d" || value === "30d") {
     return value;
@@ -60,7 +67,7 @@ export async function GET(req: Request) {
 
   const supabase = createSupabaseAdmin();
 
-  const [feedbackRes, sessionsRes] = await Promise.all([
+  const [feedbackRes, sessionsRes, outcomesRes] = await Promise.all([
     supabase
       .from("session_feedback")
       .select("call_rating, csat_recommend_score, call_feedback, submitted_at, source")
@@ -71,6 +78,11 @@ export async function GET(req: Request) {
       .select("id", { count: "exact", head: true })
       .eq("status", "completed")
       .gte("ended_at", start),
+    supabase
+      .from("session_outcomes")
+      .select("session_id, outcome, user_note, created_at")
+      .gte("created_at", start)
+      .order("created_at", { ascending: false }),
   ]);
 
   if (feedbackRes.error) {
@@ -83,8 +95,14 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: sessionsRes.error.message }, { status: 500 });
   }
 
+  if (outcomesRes.error) {
+    console.error("[admin outcomes query]", outcomesRes.error);
+    return NextResponse.json({ error: outcomesRes.error.message }, { status: 500 });
+  }
+
   const feedbackRows = feedbackRes.data || [];
   const completedSessions = sessionsRes.count || 0;
+  const outcomeRows = (outcomesRes.data || []) as OutcomeRow[];
 
   const callRatings = feedbackRows.map((r) => Number(r.call_rating)).filter((n) => Number.isFinite(n));
   const recommendScores = feedbackRows
@@ -158,6 +176,50 @@ export async function GET(req: Request) {
       source: row.source,
     }));
 
+  const outcomesWell = outcomeRows.filter((row) => row.outcome === "well").length;
+  const outcomesTough = outcomeRows.filter((row) => row.outcome === "tough").length;
+  const outcomesWithNotes = outcomeRows.filter(
+    (row) => typeof row.user_note === "string" && row.user_note.trim().length > 0
+  ).length;
+  const outcomesToughRate =
+    outcomeRows.length > 0
+      ? Number(((outcomesTough / outcomeRows.length) * 100).toFixed(2))
+      : 0;
+
+  const outcomeTrendMap = new Map<string, { day: string; well: number; tough: number; total: number }>();
+  for (const row of outcomeRows) {
+    const day = new Date(row.created_at).toISOString().slice(0, 10);
+    const existing = outcomeTrendMap.get(day) || {
+      day,
+      well: 0,
+      tough: 0,
+      total: 0,
+    };
+
+    if (row.outcome === "well") existing.well += 1;
+    if (row.outcome === "tough") existing.tough += 1;
+    existing.total += 1;
+    outcomeTrendMap.set(day, existing);
+  }
+
+  const outcomesTrend = [...outcomeTrendMap.values()]
+    .sort((a, b) => a.day.localeCompare(b.day))
+    .map((item) => ({
+      day: item.day,
+      total: item.total,
+      well: item.well,
+      tough: item.tough,
+      tough_rate_percent:
+        item.total > 0 ? Number(((item.tough / item.total) * 100).toFixed(2)) : 0,
+    }));
+
+  const recentOutcomes = outcomeRows.slice(0, 30).map((row) => ({
+    session_id: row.session_id,
+    outcome: row.outcome,
+    user_note: row.user_note,
+    created_at: row.created_at,
+  }));
+
   return NextResponse.json({
     range,
     from: start,
@@ -179,5 +241,16 @@ export async function GET(req: Request) {
     },
     trend,
     recent_feedback: recentFeedback,
+    outcomes: {
+      totals: {
+        responses: outcomeRows.length,
+        well: outcomesWell,
+        tough: outcomesTough,
+        with_notes: outcomesWithNotes,
+        tough_rate_percent: outcomesToughRate,
+      },
+      trend: outcomesTrend,
+      recent: recentOutcomes,
+    },
   });
 }

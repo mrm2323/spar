@@ -476,6 +476,114 @@ export function AdminDashboard() {
           </div>
         </div>
 
+        {/* Real Conversation Outcomes */}
+        <div className="mb-6 rounded-xl border border-gray-100 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                Real Conversation Outcomes
+              </h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Notes-page check-ins after real conversations: it went well vs it was tough.
+              </p>
+            </div>
+            <span className="text-xs text-gray-500 dark:text-gray-400">Range: {timeRange}</span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            <StatCard
+              title="Outcome Responses"
+              value={csat?.outcomes?.totals?.responses ?? 0}
+              subtext="Total submissions"
+              icon={Users}
+              color="blue"
+            />
+            <StatCard
+              title="It Went Well"
+              value={csat?.outcomes?.totals?.well ?? 0}
+              subtext="Positive outcomes"
+              icon={CheckCircle}
+              color="emerald"
+            />
+            <StatCard
+              title="It Was Tough"
+              value={csat?.outcomes?.totals?.tough ?? 0}
+              subtext="Hard outcomes"
+              icon={XCircle}
+              color="amber"
+            />
+            <StatCard
+              title="Tough Rate"
+              value={csat ? `${csat?.outcomes?.totals?.tough_rate_percent ?? 0}%` : '-'}
+              subtext="Tough / total"
+              icon={TrendingUp}
+              color="purple"
+            />
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="rounded-lg border border-gray-100 p-3 dark:border-gray-700">
+              <p className="mb-2 text-sm font-medium text-gray-700 dark:text-gray-200">
+                Daily Outcome Trend
+              </p>
+              <div className="max-h-56 overflow-y-auto">
+                {(csat?.outcomes?.trend || []).length === 0 ? (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">No outcome check-ins for this range.</p>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs text-gray-500 dark:text-gray-400">
+                        <th className="py-1">Day</th>
+                        <th className="py-1">Total</th>
+                        <th className="py-1">Well</th>
+                        <th className="py-1">Tough</th>
+                        <th className="py-1">Tough %</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(csat?.outcomes?.trend || []).map((row) => (
+                        <tr key={row.day} className="border-t border-gray-100 dark:border-gray-700">
+                          <td className="py-1.5 text-gray-700 dark:text-gray-200">{row.day}</td>
+                          <td className="py-1.5 text-gray-600 dark:text-gray-300">{row.total}</td>
+                          <td className="py-1.5 text-emerald-600 dark:text-emerald-300">{row.well}</td>
+                          <td className="py-1.5 text-amber-600 dark:text-amber-300">{row.tough}</td>
+                          <td className="py-1.5 text-gray-600 dark:text-gray-300">{row.tough_rate_percent}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-gray-100 p-3 dark:border-gray-700">
+              <p className="mb-2 text-sm font-medium text-gray-700 dark:text-gray-200">
+                Recent Outcome Notes
+              </p>
+              <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+                {(csat?.outcomes?.recent || []).length === 0 ? (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">No outcome responses yet.</p>
+                ) : (
+                  (csat?.outcomes?.recent || []).map((row, idx) => (
+                    <div key={`${row.created_at}-${row.session_id}-${idx}`} className="rounded border border-gray-100 p-2 dark:border-gray-700">
+                      <div className="mb-1 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                        <span>{new Date(row.created_at).toLocaleString()}</span>
+                        <span className={row.outcome === 'well' ? 'text-emerald-600 dark:text-emerald-300' : 'text-amber-600 dark:text-amber-300'}>
+                          {row.outcome === 'well' ? 'It went well' : 'It was tough'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">Session: {row.session_id}</p>
+                      <p className="mt-1 text-sm text-gray-700 dark:text-gray-200">
+                        {row.user_note && row.user_note.trim().length > 0 ? row.user_note : 'No note provided.'}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Two column layout */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           
