@@ -32,6 +32,8 @@ interface SessionCapStatus {
   usedSeconds: number;
   remainingSeconds: number;
   nextResetTime?: string;
+  /** True when user is in SPAR_CAP_EXEMPT_USER_IDS */
+  capExempt?: boolean;
 }
 
 function relativeSessionTime(iso: string | null): string {
@@ -339,7 +341,15 @@ function DashboardInner() {
 
           {capStatus ? (
             <p className="mx-auto mt-5 max-w-lg text-center text-sm text-cyan-300/80">
-              Free launch practice left: {Math.floor(capStatus.remainingSeconds / 60)} min {String(capStatus.remainingSeconds % 60).padStart(2, "0")} sec
+              {capStatus.capExempt ? (
+                <>Practice cap: unlimited (owner)</>
+              ) : (
+                <>
+                  Free launch practice left:{" "}
+                  {Math.floor(capStatus.remainingSeconds / 60)} min{" "}
+                  {String(capStatus.remainingSeconds % 60).padStart(2, "0")} sec
+                </>
+              )}
             </p>
           ) : null}
 

@@ -4,6 +4,23 @@ import { getSessionUserIds } from "@/lib/session-access";
 export const FREE_SESSION_CAP_SECONDS = 15 * 60;
 export const DEFAULT_SESSION_MAX_SECONDS = 10 * 60;
 
+/** Effectively unlimited for daily-cap math (single session still capped by getAllowedSessionSeconds). */
+const EXEMPT_REMAINING_SECONDS = 365 * 24 * 60 * 60;
+
+/**
+ * Clerk user IDs that skip the free daily practice cap (owners / internal).
+ * Set `SPAR_CAP_EXEMPT_USER_IDS` in `.env.local` to a comma-separated list, e.g. `user_abc,user_def`.
+ */
+export function isSessionCapExemptUser(userId: string): boolean {
+  const raw = process.env.SPAR_CAP_EXEMPT_USER_IDS?.trim();
+  if (!raw) return false;
+  const ids = raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return ids.includes(userId);
+}
+
 type AdminClient = ReturnType<typeof createSupabaseAdmin>;
 
 type SessionUsageRow = {
@@ -72,6 +89,19 @@ export async function getUserSessionUsage(
     excludeSessionId?: string | null;
   }
 ) {
+  if (isSessionCapExemptUser(userId)) {
+    return {
+      capSeconds: FREE_SESSION_CAP_SECONDS,
+      usedSeconds: 0,
+      remainingSeconds: EXEMPT_REMAINING_SECONDS,
+      usedMinutes: 0,
+      remainingMinutes: Number((EXEMPT_REMAINING_SECONDS / 60).toFixed(2)),
+      usagePercent: 0,
+      nextResetTime: getNextResetTime().toISOString(),
+      capExempt: true as const,
+    };
+  }
+
   const includeActive = opts?.includeActive ?? true;
   const excludeSessionId = opts?.excludeSessionId || null;
 
@@ -141,6 +171,7 @@ export async function getUserSessionUsage(
     remainingMinutes: Number((remainingSeconds / 60).toFixed(2)),
     usagePercent: Number(((usedSeconds / FREE_SESSION_CAP_SECONDS) * 100).toFixed(1)),
     nextResetTime: getNextResetTime().toISOString(),
+    capExempt: false as const,
   };
 }
 
