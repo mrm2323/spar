@@ -67,6 +67,29 @@ create index if not exists idx_session_outcomes_created_at on session_outcomes(c
 
 alter table session_outcomes enable row level security;
 
+-- Immediate end-of-call feedback (CSAT + recommendation score)
+create table if not exists session_feedback (
+  id uuid primary key default gen_random_uuid(),
+  session_id uuid not null references sessions(id) on delete cascade,
+  user_id text not null,
+  call_rating smallint not null check (call_rating between 1 and 5),
+  call_feedback text,
+  csat_recommend_score smallint not null check (csat_recommend_score between 1 and 10),
+  source text not null default 'end_call' check (source in ('end_call', 'notes_page', 'api')),
+  metadata jsonb not null default '{}'::jsonb,
+  submitted_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint session_feedback_session_unique unique (session_id)
+);
+
+create index if not exists idx_session_feedback_user_id on session_feedback(user_id);
+create index if not exists idx_session_feedback_submitted_at on session_feedback(submitted_at desc);
+create index if not exists idx_session_feedback_call_rating on session_feedback(call_rating);
+create index if not exists idx_session_feedback_csat_score on session_feedback(csat_recommend_score);
+
+alter table session_feedback enable row level security;
+
 -- RLS policies
 alter table sessions enable row level security;
 alter table forensics_reports enable row level security;
@@ -94,4 +117,8 @@ create policy "Users can read own memory"
 
 create policy "Service role can manage memory"
   on user_memory for all
+  using (current_setting('role') = 'service_role');
+
+create policy "Service role can manage session feedback"
+  on session_feedback for all
   using (current_setting('role') = 'service_role');

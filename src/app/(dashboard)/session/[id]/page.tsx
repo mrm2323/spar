@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Paperclip, Loader2, Check, Monitor, Square } from "lucide-react";
+import { Paperclip, Loader2, Check, Monitor, Square, Star } from "lucide-react";
 import Vapi from "@vapi-ai/web";
 import { trackEvent } from "@/lib/analytics";
 
@@ -11,6 +11,7 @@ type SessionStatus =
   | "connecting"
   | "active"
   | "ended"
+  | "feedback"
   | "error";
 type SpeakingState = "listening" | "kabir" | "idle";
 
@@ -89,6 +90,11 @@ export default function SessionPage() {
     "idle" | "processing" | "done"
   >("idle");
   const [screenError, setScreenError] = useState<string | null>(null);
+  const [callRating, setCallRating] = useState<number | null>(null);
+  const [recommendScore, setRecommendScore] = useState<number | null>(null);
+  const [callFeedback, setCallFeedback] = useState("");
+  const [feedbackSaving, setFeedbackSaving] = useState(false);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) {
@@ -535,7 +541,8 @@ export default function SessionPage() {
       });
 
       sessionStorage.removeItem(`spar_session_${id}`);
-      setTimeout(() => router.push(`/notes/${id}`), 2500);
+      setEnding(false);
+      setStatus("feedback");
     } catch (error) {
       console.error("End session failed:", error);
       trackEvent("session_end_failed", {
@@ -549,7 +556,75 @@ export default function SessionPage() {
         `Could not end this session: ${error instanceof Error ? error.message : "unknown error"}`
       );
     }
-  }, [id, router, speaking, elapsed, stopScreenShare]);
+  }, [id, speaking, elapsed, stopScreenShare]);
+
+  const continueToNotes = useCallback(() => {
+    if (!id) return;
+    router.push(`/notes/${id}`);
+  }, [id, router]);
+
+  const submitFeedback = useCallback(async () => {
+    if (!id) return;
+
+    if (!callRating) {
+      setFeedbackError("Please rate the call out of 5 stars.");
+      return;
+    }
+
+    if (!recommendScore) {
+      setFeedbackError("Please share how likely you are to recommend Kabir (1-10).");
+      return;
+    }
+
+    setFeedbackError(null);
+    setFeedbackSaving(true);
+
+    trackEvent("session_feedback_submit_started", {
+      session_id: id,
+      call_rating: callRating,
+      csat_recommend_score: recommendScore,
+      has_written_feedback: callFeedback.trim().length > 0,
+    });
+
+    try {
+      const res = await fetch(`/api/session/${id}/feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          call_rating: callRating,
+          csat_recommend_score: recommendScore,
+          call_feedback: callFeedback.trim() || null,
+          source: "end_call",
+          metadata: {
+            elapsed_seconds: elapsed,
+            vapi_call_id: callIdRef.current,
+          },
+        }),
+      });
+
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+
+      trackEvent("session_feedback_submit_succeeded", {
+        session_id: id,
+        call_rating: callRating,
+        csat_recommend_score: recommendScore,
+      });
+
+      continueToNotes();
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Could not save feedback";
+      setFeedbackError(msg);
+      trackEvent("session_feedback_submit_failed", {
+        session_id: id,
+        error: msg,
+      });
+    } finally {
+      setFeedbackSaving(false);
+    }
+  }, [id, callRating, recommendScore, callFeedback, elapsed, continueToNotes]);
 
   const formatTime = (s: number) => {
     const m = Math.floor(s / 60);
@@ -583,6 +658,106 @@ export default function SessionPage() {
               style={{ animationDelay: `${i * 0.3}s` }}
             />
           ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (status === "feedback") {
+    return (
+      <div className="mx-auto flex min-h-[80vh] w-full max-w-2xl flex-col items-center justify-center px-5 py-8">
+        <div className="w-full rounded-2xl border border-slate-700/60 bg-slate-950/60 p-6 sm:p-7">
+          <h1 className="text-center text-xl font-semibold text-slate-100">
+            Before you go, quick feedback
+          </h1>
+          <p className="mt-2 text-center text-sm text-slate-400">
+            This helps us log call quality and improve Kabir.
+          </p>
+
+          <section className="mt-6">
+            <p className="text-sm font-medium text-slate-200">How was the call?</p>
+            <div className="mt-2 flex items-center gap-2">
+              {Array.from({ length: 5 }).map((_, idx) => {
+                const value = idx + 1;
+                const active = (callRating || 0) >= value;
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-label={`Rate ${value} out of 5`}
+                    onClick={() => setCallRating(value)}
+                    className={`rounded-md p-1.5 transition-colors ${
+                      active ? "text-amber-300" : "text-slate-500 hover:text-slate-300"
+                    }`}
+                  >
+                    <Star className={`h-7 w-7 ${active ? "fill-current" : ""}`} />
+                  </button>
+                );
+              })}
+              <span className="ml-2 text-xs text-slate-400">
+                {callRating ? `${callRating}/5` : "Select 1 to 5"}
+              </span>
+            </div>
+          </section>
+
+          <section className="mt-6">
+            <p className="text-sm font-medium text-slate-200">
+              How likely are you to recommend Kabir to your friends?
+            </p>
+            <p className="mt-1 text-xs text-slate-500">1 = not likely, 10 = very likely</p>
+            <div className="mt-3 grid grid-cols-5 gap-2 sm:grid-cols-10">
+              {Array.from({ length: 10 }).map((_, idx) => {
+                const value = idx + 1;
+                const selected = recommendScore === value;
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setRecommendScore(value)}
+                    className={`rounded-md border px-2 py-2 text-sm font-medium transition-colors ${
+                      selected
+                        ? "border-cyan-400/70 bg-cyan-500/15 text-cyan-100"
+                        : "border-slate-700 bg-slate-900/60 text-slate-300 hover:border-slate-500"
+                    }`}
+                  >
+                    {value}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="mt-6">
+            <label htmlFor="call-feedback" className="text-sm font-medium text-slate-200">
+              Anything else we should know? (optional)
+            </label>
+            <textarea
+              id="call-feedback"
+              rows={4}
+              value={callFeedback}
+              onChange={(e) => setCallFeedback(e.target.value)}
+              maxLength={2000}
+              placeholder="What worked, what felt off, what to improve..."
+              className="mt-2 w-full resize-y rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 outline-none focus:border-slate-500"
+            />
+          </section>
+
+          {feedbackError ? (
+            <p className="mt-3 text-sm text-red-400" role="alert">
+              {feedbackError}
+            </p>
+          ) : null}
+
+          <div className="mt-6 flex justify-end">
+            <button
+              type="button"
+              onClick={() => void submitFeedback()}
+              disabled={feedbackSaving}
+              className="rounded-md border border-emerald-500/60 bg-emerald-600/20 px-4 py-2 text-sm font-medium text-emerald-100 hover:bg-emerald-600/30 disabled:opacity-50"
+            >
+              {feedbackSaving ? "Saving..." : "Submit & continue"}
+            </button>
+          </div>
         </div>
       </div>
     );

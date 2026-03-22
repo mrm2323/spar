@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   AlertTriangle, Shield, Users, TrendingUp, Clock, 
   Eye, CheckCircle, XCircle, RefreshCw, Download
@@ -21,12 +21,14 @@ export function AdminDashboard() {
   const [recentCrisis, setRecentCrisis] = useState([]);
   const [recentFilters, setRecentFilters] = useState([]);
   const [dependencyFlags, setDependencyFlags] = useState([]);
+  const [csat, setCsat] = useState(null);
+  const [csatError, setCsatError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [timeRange, setTimeRange] = useState('24h');
   const [autoRefresh, setAutoRefresh] = useState(true);
 
   // Fetch dashboard data
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     if (!hasSupabaseEnv) {
       setIsLoading(false);
       return;
@@ -46,6 +48,8 @@ export function AdminDashboard() {
     }
 
     try {
+      const adminPassword = sessionStorage.getItem('kabir_admin_password') || '';
+
       // Fetch crisis stats
       const { data: crisisData } = await supabase
         .from('crisis_logs')
@@ -75,6 +79,20 @@ export function AdminDashboard() {
         .eq('summary_date', today)
         .single();
 
+      const csatRes = await fetch(`/api/admin/csat?range=${timeRange}`, {
+        headers: {
+          'x-admin-password': adminPassword,
+        },
+      });
+      const csatData = await csatRes.json().catch(() => ({}));
+      if (!csatRes.ok) {
+        setCsatError(csatData?.error || 'Could not load CSAT metrics');
+        setCsat(null);
+      } else {
+        setCsatError('');
+        setCsat(csatData);
+      }
+
       // Calculate stats
       const crisisStats = {
         total: crisisData?.length || 0,
@@ -101,7 +119,7 @@ export function AdminDashboard() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [hasSupabaseEnv, timeRange]);
 
   // Initial fetch and auto-refresh
   useEffect(() => {
@@ -111,7 +129,7 @@ export function AdminDashboard() {
       const interval = setInterval(fetchData, 30000); // 30 seconds
       return () => clearInterval(interval);
     }
-  }, [timeRange, autoRefresh]);
+  }, [fetchData, autoRefresh]);
 
   // Stat card component
   const StatCard = ({ title, value, subtext, icon: Icon, color = 'blue', urgent = false }) => (
@@ -160,6 +178,7 @@ export function AdminDashboard() {
   const handleExport = () => {
     const data = {
       stats,
+      csat,
       recentCrisis,
       recentFilters,
       dependencyFlags,
@@ -301,6 +320,160 @@ export function AdminDashboard() {
             icon={XCircle}
             color="red"
           />
+        </div>
+
+        {/* CSAT Monitor */}
+        <div className="mb-6 rounded-xl border border-gray-100 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                Call CSAT Monitor
+              </h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                End-of-call rating, recommendation score, response rate, and NPS buckets.
+              </p>
+            </div>
+            <span className="text-xs text-gray-500 dark:text-gray-400">Range: {timeRange}</span>
+          </div>
+
+          {csatError ? (
+            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600 dark:bg-red-900/30 dark:text-red-300">
+              {csatError}
+            </p>
+          ) : null}
+
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+            <StatCard
+              title="Avg Star Rating"
+              value={csat?.metrics?.avg_call_rating ?? '-'}
+              subtext="Out of 5"
+              icon={TrendingUp}
+              color="emerald"
+            />
+            <StatCard
+              title="Avg Recommend"
+              value={csat?.metrics?.avg_recommend_score ?? '-'}
+              subtext="Out of 10"
+              icon={TrendingUp}
+              color="blue"
+            />
+            <StatCard
+              title="Response Rate"
+              value={csat ? `${csat.totals?.response_rate_percent ?? 0}%` : '-'}
+              subtext={`${csat?.totals?.feedback_responses ?? 0}/${csat?.totals?.completed_sessions ?? 0} sessions`}
+              icon={Users}
+              color="purple"
+            />
+            <StatCard
+              title="NPS Score"
+              value={csat?.metrics?.nps_score ?? '-'}
+              subtext="Promoters - Detractors"
+              icon={Shield}
+              color="amber"
+            />
+            <StatCard
+              title="Responses"
+              value={csat?.totals?.feedback_responses ?? 0}
+              subtext="Feedback submissions"
+              icon={Clock}
+              color="cyan"
+            />
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="rounded-lg border border-gray-100 p-3 dark:border-gray-700">
+              <p className="mb-2 text-sm font-medium text-gray-700 dark:text-gray-200">NPS Buckets</p>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="rounded-md bg-red-50 px-2 py-2 dark:bg-red-900/30">
+                  <p className="text-xs text-red-600 dark:text-red-300">Detractors (0-6)</p>
+                  <p className="text-lg font-semibold text-red-700 dark:text-red-200">
+                    {csat?.metrics?.nps_buckets?.detractors ?? 0}
+                  </p>
+                </div>
+                <div className="rounded-md bg-yellow-50 px-2 py-2 dark:bg-yellow-900/30">
+                  <p className="text-xs text-yellow-700 dark:text-yellow-300">Passives (7-8)</p>
+                  <p className="text-lg font-semibold text-yellow-800 dark:text-yellow-200">
+                    {csat?.metrics?.nps_buckets?.passives ?? 0}
+                  </p>
+                </div>
+                <div className="rounded-md bg-green-50 px-2 py-2 dark:bg-green-900/30">
+                  <p className="text-xs text-green-700 dark:text-green-300">Promoters (9-10)</p>
+                  <p className="text-lg font-semibold text-green-800 dark:text-green-200">
+                    {csat?.metrics?.nps_buckets?.promoters ?? 0}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-gray-100 p-3 dark:border-gray-700">
+              <p className="mb-2 text-sm font-medium text-gray-700 dark:text-gray-200">
+                Recommendation Distribution (1-10)
+              </p>
+              <div className="grid grid-cols-10 gap-1">
+                {(csat?.metrics?.recommend_distribution || []).map((item) => (
+                  <div key={item.score} className="rounded bg-gray-100 px-1 py-1 text-center dark:bg-gray-700/60">
+                    <p className="text-[10px] text-gray-500 dark:text-gray-400">{item.score}</p>
+                    <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">{item.count}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="rounded-lg border border-gray-100 p-3 dark:border-gray-700">
+              <p className="mb-2 text-sm font-medium text-gray-700 dark:text-gray-200">
+                Daily Trend
+              </p>
+              <div className="max-h-56 overflow-y-auto">
+                {(csat?.trend || []).length === 0 ? (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">No trend points for this range.</p>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs text-gray-500 dark:text-gray-400">
+                        <th className="py-1">Day</th>
+                        <th className="py-1">Resp</th>
+                        <th className="py-1">Avg ★</th>
+                        <th className="py-1">Avg Rec</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {csat.trend.map((row) => (
+                        <tr key={row.day} className="border-t border-gray-100 dark:border-gray-700">
+                          <td className="py-1.5 text-gray-700 dark:text-gray-200">{row.day}</td>
+                          <td className="py-1.5 text-gray-600 dark:text-gray-300">{row.feedback_count}</td>
+                          <td className="py-1.5 text-gray-600 dark:text-gray-300">{row.avg_call_rating}</td>
+                          <td className="py-1.5 text-gray-600 dark:text-gray-300">{row.avg_recommend_score}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-gray-100 p-3 dark:border-gray-700">
+              <p className="mb-2 text-sm font-medium text-gray-700 dark:text-gray-200">
+                Recent Feedback Notes
+              </p>
+              <div className="max-h-56 space-y-2 overflow-y-auto pr-1">
+                {(csat?.recent_feedback || []).length === 0 ? (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">No written feedback yet.</p>
+                ) : (
+                  csat.recent_feedback.map((row, idx) => (
+                    <div key={`${row.submitted_at}-${idx}`} className="rounded border border-gray-100 p-2 dark:border-gray-700">
+                      <div className="mb-1 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                        <span>{new Date(row.submitted_at).toLocaleString()}</span>
+                        <span>★ {row.call_rating} | Rec {row.csat_recommend_score}/10</span>
+                      </div>
+                      <p className="text-sm text-gray-700 dark:text-gray-200">{row.call_feedback}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Two column layout */}

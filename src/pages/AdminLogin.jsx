@@ -13,8 +13,10 @@ export function AdminLogin({ onSuccess }) {
     e.preventDefault();
     if (password === ADMIN_PASSWORD) {
       sessionStorage.setItem('kabir_admin', 'true');
+      sessionStorage.setItem('kabir_admin_password', password);
       onSuccess();
     } else {
+      sessionStorage.removeItem('kabir_admin_password');
       setError('Invalid password');
     }
   };

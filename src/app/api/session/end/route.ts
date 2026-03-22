@@ -1,5 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { createSupabaseAdmin } from "@/lib/supabase/server";
+import { parseSessionFeedbackInput, upsertSessionFeedback } from "@/lib/session-feedback";
 import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
@@ -9,9 +10,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { sessionId, vapiCallId } = (await req.json()) as {
+    const { sessionId, vapiCallId, feedback } = (await req.json()) as {
       sessionId: string;
       vapiCallId?: string | null;
+      feedback?: Record<string, unknown> | null;
     };
     if (!sessionId) {
       return NextResponse.json({ error: "Missing sessionId" }, { status: 400 });
@@ -70,6 +72,27 @@ export async function POST(req: Request) {
         { error: "Failed to end session" },
         { status: 500 }
       );
+    }
+
+    if (feedback) {
+      const parsed = parseSessionFeedbackInput(feedback);
+      if (!parsed.value) {
+        return NextResponse.json(
+          { error: parsed.error || "Invalid feedback payload" },
+          { status: 400 }
+        );
+      }
+
+      const { error: feedbackError } = await upsertSessionFeedback({
+        supabase,
+        sessionId,
+        userId,
+        feedback: parsed.value,
+      });
+
+      if (feedbackError) {
+        console.error("[SESSION END] feedback upsert failed", feedbackError);
+      }
     }
 
     // Memory accounting should not block ending the session.
