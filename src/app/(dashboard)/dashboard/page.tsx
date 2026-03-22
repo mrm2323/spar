@@ -338,16 +338,9 @@ function DashboardInner() {
           )}
 
           {capStatus ? (
-            <div className="mx-auto mt-3 max-w-lg space-y-1 text-center">
-              <p className="text-xs text-cyan-300/80">
-                Free launch practice left: {Math.floor(capStatus.remainingSeconds / 60)} min {String(capStatus.remainingSeconds % 60).padStart(2, "0")} sec
-              </p>
-              {capStatus.nextResetTime && (
-                <p className="text-[10px] text-slate-400">
-                  Resets at 10:00 AM UTC tomorrow
-                </p>
-              )}
-            </div>
+            <p className="mx-auto mt-3 max-w-lg text-center text-xs text-cyan-300/80">
+              Free launch practice left: {Math.floor(capStatus.remainingSeconds / 60)} min {String(capStatus.remainingSeconds % 60).padStart(2, "0")} sec
+            </p>
           ) : null}
 
           {startError ? (
