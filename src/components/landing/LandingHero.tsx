@@ -10,7 +10,11 @@ const SCENARIOS = [
   "The awkward ask",
 ] as const;
 
-export function LandingHero() {
+type LandingHeroProps = {
+  isSignedIn?: boolean;
+};
+
+export function LandingHero({ isSignedIn = false }: LandingHeroProps) {
   return (
     <div className="relative flex min-h-screen flex-col overflow-hidden bg-[#030712] text-white">
       <div
@@ -37,18 +41,29 @@ export function LandingHero() {
           className="flex items-center gap-2 sm:gap-3"
           aria-label="Account"
         >
-          <Link
-            href="/sign-in"
-            className="rounded-lg border border-white/12 bg-white/[0.04] px-3 py-2 text-sm font-medium text-slate-200 transition-colors hover:border-white/20 hover:bg-white/[0.07] hover:text-white sm:px-4"
-          >
-            Sign in
-          </Link>
-          <Link
-            href="/sign-up"
-            className="rounded-lg bg-gradient-to-b from-cyan-300 to-cyan-400 px-3 py-2 text-sm font-semibold text-slate-950 shadow-[0_0_0_1px_rgba(255,255,255,0.08)_inset,0_8px_24px_rgba(34,211,238,0.22)] transition-all hover:from-cyan-200 hover:to-cyan-300 sm:px-4"
-          >
-            Create account
-          </Link>
+          {isSignedIn ? (
+            <Link
+              href="/dashboard"
+              className="rounded-lg bg-gradient-to-b from-cyan-300 to-cyan-400 px-3 py-2 text-sm font-semibold text-slate-950 shadow-[0_0_0_1px_rgba(255,255,255,0.08)_inset,0_8px_24px_rgba(34,211,238,0.22)] transition-all hover:from-cyan-200 hover:to-cyan-300 sm:px-4"
+            >
+              Go to practice
+            </Link>
+          ) : (
+            <>
+              <Link
+                href="/sign-in"
+                className="rounded-lg border border-white/12 bg-white/[0.04] px-3 py-2 text-sm font-medium text-slate-200 transition-colors hover:border-white/20 hover:bg-white/[0.07] hover:text-white sm:px-4"
+              >
+                Sign in
+              </Link>
+              <Link
+                href="/sign-up"
+                className="rounded-lg bg-gradient-to-b from-cyan-300 to-cyan-400 px-3 py-2 text-sm font-semibold text-slate-950 shadow-[0_0_0_1px_rgba(255,255,255,0.08)_inset,0_8px_24px_rgba(34,211,238,0.22)] transition-all hover:from-cyan-200 hover:to-cyan-300 sm:px-4"
+              >
+                Create account
+              </Link>
+            </>
+          )}
         </nav>
       </header>
 
@@ -106,7 +121,18 @@ export function LandingHero() {
             Private · Voice-first
           </p>
 
-          <EarlyAccessForm />
+          {isSignedIn ? (
+            <div className="mt-10">
+              <Link
+                href="/dashboard"
+                className="inline-flex min-h-[48px] items-center rounded-xl bg-gradient-to-b from-cyan-300 to-cyan-500 px-6 py-3 text-sm font-semibold text-slate-950 shadow-[0_0_0_1px_rgba(255,255,255,0.1)_inset,0_10px_28px_rgba(34,211,238,0.25)] transition-all hover:from-cyan-200 hover:to-cyan-400"
+              >
+                Open mic dashboard
+              </Link>
+            </div>
+          ) : (
+            <EarlyAccessForm />
+          )}
         </section>
 
         <section
