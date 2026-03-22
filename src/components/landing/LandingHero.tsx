@@ -43,10 +43,10 @@ export function LandingHero({ isSignedIn = false }: LandingHeroProps) {
         >
           {isSignedIn ? (
             <Link
-              href="/dashboard"
-              className="rounded-lg bg-gradient-to-b from-cyan-300 to-cyan-400 px-3 py-2 text-sm font-semibold text-slate-950 shadow-[0_0_0_1px_rgba(255,255,255,0.08)_inset,0_8px_24px_rgba(34,211,238,0.22)] transition-all hover:from-cyan-200 hover:to-cyan-300 sm:px-4"
+              href="/dashboard/settings"
+              className="rounded-lg border border-white/14 bg-white/[0.05] px-3 py-2 text-sm font-medium text-slate-100 transition-colors hover:border-white/24 hover:bg-white/[0.08] sm:px-4"
             >
-              Go to practice
+              Profile
             </Link>
           ) : (
             <>
