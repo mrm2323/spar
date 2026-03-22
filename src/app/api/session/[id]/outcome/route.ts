@@ -3,9 +3,6 @@ import { createSupabaseAdmin } from "@/lib/supabase/server";
 import { sessionBelongsToUser } from "@/lib/session-access";
 import { NextResponse } from "next/server";
 
-/** Aligned with notes UI: check-in available 1h after session (real convo may be same day) */
-const MS_AFTER_SESSION = 60 * 60 * 1000;
-
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -37,27 +34,6 @@ export async function POST(
   const ok = await sessionBelongsToUser(supabase, sessionId, userId);
   if (!ok) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-
-  const { data: sessionRow, error: sessionErr } = await supabase
-    .from("sessions")
-    .select("created_at")
-    .eq("id", sessionId)
-    .single();
-
-  if (sessionErr || !sessionRow?.created_at) {
-    return NextResponse.json({ error: "Session not found" }, { status: 404 });
-  }
-
-  const created = new Date(sessionRow.created_at as string).getTime();
-  if (Number.isNaN(created) || Date.now() - created < MS_AFTER_SESSION) {
-    return NextResponse.json(
-      {
-        error:
-          "Check-in unlocks about an hour after this session so you can report on the real conversation.",
-      },
-      { status: 400 }
-    );
   }
 
   const { error: insertErr } = await supabase.from("session_outcomes").insert({
