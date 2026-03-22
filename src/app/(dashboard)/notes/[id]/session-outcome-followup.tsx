@@ -1,43 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-
-/** Enough time to have had the real conversation, without waiting a full day */
-const MS_AFTER_SESSION = 60 * 60 * 1000; // 1 hour
-
-function isEligible(createdAtIso: string | null): boolean {
-  // If timestamp is missing, do not suppress the follow-up.
-  if (!createdAtIso) return true;
-  const t = new Date(createdAtIso).getTime();
-  if (Number.isNaN(t)) return true;
-  return Date.now() - t >= MS_AFTER_SESSION;
-}
+import { useCallback, useState } from "react";
 
 export function SessionOutcomeFollowUp({
   sessionId,
-  sessionCreatedAt,
   initialSubmitted,
+  forceVisible = false,
 }: {
   sessionId: string;
-  sessionCreatedAt: string | null;
   initialSubmitted: boolean;
+  forceVisible?: boolean;
 }) {
-  const [eligible, setEligible] = useState(() =>
-    isEligible(sessionCreatedAt)
-  );
   const [submitted, setSubmitted] = useState(initialSubmitted);
   const [outcome, setOutcome] = useState<"well" | "tough" | null>(null);
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (submitted || eligible || !sessionCreatedAt) return;
-    const tick = () => setEligible(isEligible(sessionCreatedAt));
-    tick();
-    const id = window.setInterval(tick, 60_000);
-    return () => window.clearInterval(id);
-  }, [sessionCreatedAt, eligible, submitted]);
 
   const onSubmit = useCallback(
     async (e: React.FormEvent) => {
@@ -73,7 +51,7 @@ export function SessionOutcomeFollowUp({
   );
 
   const showThankYou = submitted;
-  const showForm = eligible && !submitted;
+  const showForm = (!submitted) || forceVisible;
 
   if (!showThankYou && !showForm) return null;
 

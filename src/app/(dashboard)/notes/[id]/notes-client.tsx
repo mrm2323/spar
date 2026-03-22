@@ -201,7 +201,6 @@ export function NotesClient({
   initialNotes,
   initialDate,
   initialSession,
-  sessionCreatedAt,
   initialOutcomeSubmitted,
 }: {
   sessionId: string;
@@ -211,7 +210,6 @@ export function NotesClient({
     transcript: unknown;
     ended_at: string | null;
   } | null;
-  sessionCreatedAt: string | null;
   initialOutcomeSubmitted: boolean;
 }) {
   const router = useRouter();
@@ -227,10 +225,12 @@ export function NotesClient({
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [transcriptExpanded, setTranscriptExpanded] = useState(false);
   const [restarting, setRestarting] = useState(false);
+  const [showOutcomeFollowUp, setShowOutcomeFollowUp] = useState(false);
   const [sessionStartError, setSessionStartError] = useState<string | null>(
     null
   );
   const [copiedBefore, setCopiedBefore] = useState(false);
+  const outcomeSectionRef = useRef<HTMLElement | null>(null);
 
   async function restartPractice() {
     setRestarting(true);
@@ -893,7 +893,15 @@ export function NotesClient({
           )}
           <button
             type="button"
-            title="Coming soon"
+            onClick={() => {
+              setShowOutcomeFollowUp(true);
+              window.setTimeout(() => {
+                outcomeSectionRef.current?.scrollIntoView({
+                  behavior: "smooth",
+                  block: "start",
+                });
+              }, 0);
+            }}
             className="flex w-full items-center justify-center rounded-lg border border-slate-600 bg-transparent px-5 py-3.5 text-sm font-medium text-slate-300 hover:border-slate-500 hover:bg-slate-900/40"
           >
             Call me after the real thing
@@ -986,11 +994,13 @@ export function NotesClient({
           )}
         </section>
 
-        <SessionOutcomeFollowUp
-          sessionId={sessionId}
-          sessionCreatedAt={sessionCreatedAt}
-          initialSubmitted={initialOutcomeSubmitted}
-        />
+        <section ref={outcomeSectionRef}>
+          <SessionOutcomeFollowUp
+            sessionId={sessionId}
+            initialSubmitted={initialOutcomeSubmitted}
+            forceVisible={showOutcomeFollowUp}
+          />
+        </section>
 
         <button
           type="button"
