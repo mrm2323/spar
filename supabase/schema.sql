@@ -25,7 +25,7 @@ create table if not exists forensics_reports (
   id uuid primary key default gen_random_uuid(),
   session_id uuid not null references sessions(id) on delete cascade,
   user_id text not null,
-  overall_score integer not null check (overall_score between 0 and 100),
+  overall_score integer check (overall_score is null or (overall_score between 0 and 100)),
   summary text not null,
   moments jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now()

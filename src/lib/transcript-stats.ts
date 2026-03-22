@@ -132,12 +132,14 @@ export function computeTranscriptStats(transcript: unknown): {
   };
 }
 
-/** First quoted substring, or first ~80 chars if none */
+/** First quoted substring (straight or curly quotes), or first ~160 chars if none */
 export function extractQuotedSection(text: string): {
   quote: string;
   rest: string;
 } {
-  const m = text.match(/"([^"]+)"/);
+  const m =
+    text.match(/"([^"]+)"/) ||
+    text.match(/\u201C([^\u201D]+)\u201D/);
   if (m) {
     const rest = text
       .replace(m[0], "")

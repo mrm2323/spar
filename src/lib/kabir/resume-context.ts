@@ -1,6 +1,19 @@
 import { createSupabaseAdmin } from "@/lib/supabase/server";
 import { sessionBelongsToUser } from "@/lib/session-access";
 
+function formatWhatFragment(v: unknown): string {
+  if (typeof v === "string" && v.trim()) return v.trim();
+  if (v && typeof v === "object" && !Array.isArray(v)) {
+    const o = v as { quote?: string; why?: string };
+    const q = (o.quote || "").trim();
+    const w = (o.why || "").trim();
+    if (!q && !w) return "";
+    if (q && w) return `"${q}" — ${w}`;
+    return q || w;
+  }
+  return "";
+}
+
 /**
  * Build prompt text so Kabir continues a prior practice from DB truth
  * (context, notes, transcript) — works even if Supermemory is empty.
@@ -31,14 +44,23 @@ export async function buildResumeContextForPrompt(
 
   const notes = report?.moments as Record<string, unknown> | undefined;
   const summary =
+    (typeof notes?.kabirTake === "string" && notes.kabirTake) ||
     (typeof notes?.summary === "string" && notes.summary) ||
     report?.summary ||
     "";
-  const nextTime = typeof notes?.next_time === "string" ? notes.next_time : "";
+  const beforeYou =
+    typeof notes?.beforeYouWalkIn === "string"
+      ? notes.beforeYouWalkIn.trim()
+      : "";
+  const nextTime =
+    beforeYou ||
+    (typeof notes?.next_time === "string" ? notes.next_time : "");
   const whatWorked =
-    typeof notes?.what_worked === "string" ? notes.what_worked : "";
+    formatWhatFragment(notes?.whatWorked ?? notes?.what_worked) ||
+    "";
   const rethink =
-    typeof notes?.what_to_rethink === "string" ? notes.what_to_rethink : "";
+    formatWhatFragment(notes?.whatToRethink ?? notes?.what_to_rethink) ||
+    "";
 
   let transcriptExcerpt = "";
   if (session.transcript) {

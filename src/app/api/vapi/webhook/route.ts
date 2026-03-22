@@ -30,11 +30,19 @@ function shouldDropTranscriptMessage(content: string): boolean {
   return false;
 }
 
+type SanitizedTranscriptRow = {
+  role: string;
+  content: string;
+  time: unknown;
+  endTime: unknown;
+  secondsFromStart: unknown;
+};
+
 function sanitizeTranscript(transcript: unknown): unknown {
   if (!Array.isArray(transcript)) return transcript;
 
   const cleaned = transcript
-    .map((row) => {
+    .map((row): SanitizedTranscriptRow | null => {
       const item = row as Record<string, unknown>;
       const role =
         typeof item.role === "string"
@@ -61,7 +69,7 @@ function sanitizeTranscript(transcript: unknown): unknown {
         secondsFromStart: item.secondsFromStart,
       };
     })
-    .filter((row): row is Record<string, unknown> => row !== null);
+    .filter((row): row is SanitizedTranscriptRow => row !== null);
 
   return cleaned;
 }
@@ -147,7 +155,15 @@ export async function POST(req: Request) {
         }
       }
 
-      const memoryText = await buildFullKabirContext(resolvedUserId, supabase);
+      let memoryText = "";
+      try {
+        const memoryOn = await getMemoryPreference(resolvedUserId);
+        if (memoryOn) {
+          memoryText = await buildFullKabirContext(resolvedUserId, supabase);
+        }
+      } catch {
+        memoryText = await buildFullKabirContext(resolvedUserId, supabase);
+      }
 
       const systemPrompt = buildKabirPrompt({
         scenarioRaw: undefined,

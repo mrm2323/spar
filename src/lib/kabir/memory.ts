@@ -1,14 +1,24 @@
 /**
- * Kabir long-term memory via Supermemory v3 REST.
- * Ingest: POST /v3/documents (not /add) with containerTag + optional customId.
- * Tags must be [a-zA-Z0-9_-]+ (see Supermemory docs).
+ * Kabir ↔ Supermemory (v3 REST)
+ *
+ * Auth: `Authorization: Bearer ${process.env.SUPERMEMORY_API_KEY}` (server-only).
+ *
+ * **Ingest:** Official API is `POST ${SUPERMEMORY_URL}/documents` with `containerTag`
+ * (string) — not legacy `/add`. We use `userContainerTag(userId)` so IDs like `phone:+1…`
+ * stay valid for Supermemory tag rules.
+ *
+ * **Read:** `getMemoryContext` / `getDeepMemoryContext` + `searchMemory` use `POST …/search`.
+ *
+ * **Session flow:** `saveSessionMemory` runs after forensics (`generate.ts`). Session start
+ * uses `buildFullKabirContext` = Supermemory + recent Supabase session summaries (+ resume).
  */
 
 import { createHash } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getRecentSessionSummariesForPrompt } from "@/lib/kabir/session-history";
 
-const SUPERMEMORY_BASE = "https://api.supermemory.ai/v3";
+/** API base — https://api.supermemory.ai/v3 */
+export const SUPERMEMORY_URL = "https://api.supermemory.ai/v3";
 
 function getHeaders(): HeadersInit {
   const key = process.env.SUPERMEMORY_API_KEY;
@@ -72,7 +82,7 @@ async function ingestDocument(params: {
     body.metadata = flattenMetadata(params.metadata);
   }
 
-  const res = await fetch(`${SUPERMEMORY_BASE}/documents`, {
+  const res = await fetch(`${SUPERMEMORY_URL}/documents`, {
     method: "POST",
     headers: getHeaders(),
     body: JSON.stringify(body),
@@ -87,7 +97,7 @@ async function searchDocuments(params: {
   containerTags: string[];
   limit?: number;
 }): Promise<Record<string, unknown>> {
-  const res = await fetch(`${SUPERMEMORY_BASE}/search`, {
+  const res = await fetch(`${SUPERMEMORY_URL}/search`, {
     method: "POST",
     headers: getHeaders(),
     body: JSON.stringify({
@@ -281,7 +291,10 @@ export async function getDeepMemoryContext(userId: string): Promise<string> {
   }
 }
 
-/** @deprecated prefer getDeepMemoryContext — kept for callers that expect the name */
+/**
+ * Everything Kabir can retrieve about this user from Supermemory (multi-query).
+ * For “single broad question” behavior, see also `searchMemory`.
+ */
 export async function getMemoryContext(userId: string): Promise<string> {
   return getDeepMemoryContext(userId);
 }
@@ -376,12 +389,43 @@ export function formatKabirNotesForMemory(notes: Record<string, unknown>): strin
     const v = notes[k];
     return typeof v === "string" && v.trim() ? v.trim() : "";
   };
-  if (s("summary")) parts.push(`Summary: ${s("summary")}`);
-  if (s("what_worked")) parts.push(`What worked: ${s("what_worked")}`);
-  if (s("what_to_rethink")) parts.push(`What to rethink: ${s("what_to_rethink")}`);
-  if (s("next_time")) parts.push(`Next time: ${s("next_time")}`);
+
+  const take = s("kabirTake") || s("summary");
+  if (take) parts.push(`Kabir's take: ${take}`);
+
+  const ww = notes.whatWorked ?? notes.what_worked;
+  if (ww && typeof ww === "object" && ww !== null) {
+    const o = ww as { quote?: string; why?: string };
+    if (o.quote || o.why) {
+      parts.push(
+        `What worked: ${o.quote ? `"${o.quote}"` : ""} ${o.why || ""}`.trim()
+      );
+    }
+  } else if (s("what_worked")) {
+    parts.push(`What worked: ${s("what_worked")}`);
+  }
+
+  const wr = notes.whatToRethink ?? notes.what_to_rethink;
+  if (wr && typeof wr === "object" && wr !== null) {
+    const o = wr as { quote?: string; why?: string };
+    if (o.quote || o.why) {
+      parts.push(
+        `What to rethink: ${o.quote ? `"${o.quote}"` : ""} ${o.why || ""}`.trim()
+      );
+    }
+  } else if (s("what_to_rethink")) {
+    parts.push(`What to rethink: ${s("what_to_rethink")}`);
+  }
+
+  const before = s("beforeYouWalkIn") || s("next_time");
+  if (before) parts.push(`Before you walk in: ${before}`);
+
+  const pat = s("patternDetected");
+  if (pat) parts.push(`Pattern: ${pat}`);
+
   if (s("best_moment")) parts.push(`Best moment: ${s("best_moment")}`);
   if (s("worst_moment")) parts.push(`Worst moment: ${s("worst_moment")}`);
   if (s("one_thing_to_fix")) parts.push(`One thing to fix: ${s("one_thing_to_fix")}`);
+
   return parts.join("\n\n") || JSON.stringify(notes);
 }

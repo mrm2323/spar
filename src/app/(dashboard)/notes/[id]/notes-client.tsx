@@ -4,24 +4,71 @@ import { useEffect, useRef, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Mic, ChevronDown } from "lucide-react";
-import {
-  computeTranscriptStats,
-  extractQuotedSection,
-  kabirsTakeFromSummary,
-  type TranscriptMessage,
-} from "@/lib/transcript-stats";
+import { extractQuotedSection, type TranscriptMessage } from "@/lib/transcript-stats";
 import { SessionOutcomeFollowUp } from "./session-outcome-followup";
 import { trackEvent } from "@/lib/analytics";
 
+const TRANSCRIPT_PREVIEW_MESSAGES = 8;
+/** Under this, hide session details + confidence */
+const SHORT_SESSION_MAX_SECONDS = 180;
+
+type WhatPair = { quote?: string; why?: string };
+
 interface NotesData {
-  overall_score?: number;
+  kabirTake?: string;
   summary?: string;
+  whatWorked?: WhatPair | string;
+  whatToRethink?: WhatPair | string;
   what_worked?: string;
   what_to_rethink?: string;
+  beforeYouWalkIn?: string;
   next_time?: string;
+  patternDetected?: string;
+  overall_score?: number | null;
   best_moment?: string;
   worst_moment?: string;
   one_thing_to_fix?: string;
+}
+
+function renderWithDoubleQuoteHighlights(text: string) {
+  if (!text) return null;
+  const segments = text.split('"');
+  return segments.map((segment, i) =>
+    i % 2 === 1 ? (
+      <span
+        key={i}
+        className="font-semibold text-cyan-200/95 [text-shadow:0_0_24px_rgba(34,211,238,0.12)]"
+      >
+        &quot;{segment}&quot;
+      </span>
+    ) : (
+      <span key={i}>{segment}</span>
+    )
+  );
+}
+
+function getWhatPair(
+  notes: NotesData,
+  key: "whatWorked" | "whatToRethink",
+  legacy: "what_worked" | "what_to_rethink",
+  fallbackLegacy: "best_moment" | "worst_moment"
+): { quote: string; why: string } {
+  const raw = notes[key] ?? notes[legacy] ?? notes[fallbackLegacy];
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const o = raw as WhatPair;
+    return {
+      quote: (o.quote || "").trim(),
+      why: (o.why || "").trim(),
+    };
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    const ex = extractQuotedSection(raw);
+    return {
+      quote: ex.quote,
+      why: (ex.rest || raw).trim(),
+    };
+  }
+  return { quote: "", why: "" };
 }
 
 function formatDurationDetailed(seconds: number | null | undefined): string {
@@ -142,6 +189,7 @@ export function NotesClient({
   const [deleting, setDeleting] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
+  const [transcriptExpanded, setTranscriptExpanded] = useState(false);
   const [continuing, setContinuing] = useState(false);
   const [restarting, setRestarting] = useState(false);
 
@@ -361,42 +409,66 @@ export function NotesClient({
     };
   }, [sessionId, session?.transcript, loading]);
 
-  const stats = useMemo(
-    () => computeTranscriptStats(session?.transcript),
-    [session?.transcript]
+  const kabirTakeText = useMemo(() => {
+    if (!notes) return "";
+    return (
+      (typeof notes.kabirTake === "string" && notes.kabirTake.trim()
+        ? notes.kabirTake
+        : null) ||
+      (typeof notes.summary === "string" && notes.summary.trim()
+        ? notes.summary
+        : "") ||
+      ""
+    );
+  }, [notes]);
+
+  const workedPair = useMemo(
+    () =>
+      notes
+        ? getWhatPair(notes, "whatWorked", "what_worked", "best_moment")
+        : { quote: "", why: "" },
+    [notes]
   );
 
-  const landed = useMemo(() => {
-    const raw =
-      notes?.what_worked || notes?.best_moment || "";
-    return extractQuotedSection(raw);
-  }, [notes]);
-
-  const rethink = useMemo(() => {
-    const raw =
-      notes?.what_to_rethink || notes?.worst_moment || "";
-    return extractQuotedSection(raw);
-  }, [notes]);
-
-  const kabirsTake = useMemo(() => {
-    if (!notes?.summary) return "";
-    return kabirsTakeFromSummary(notes.summary);
-  }, [notes]);
+  const rethinkPair = useMemo(
+    () =>
+      notes
+        ? getWhatPair(notes, "whatToRethink", "what_to_rethink", "worst_moment")
+        : { quote: "", why: "" },
+    [notes]
+  );
 
   const beforeYouWalkIn =
-    notes?.next_time || notes?.one_thing_to_fix || "";
+    (notes?.beforeYouWalkIn && String(notes.beforeYouWalkIn).trim()) ||
+    notes?.next_time ||
+    notes?.one_thing_to_fix ||
+    "";
+
+  const patternDetected =
+    typeof notes?.patternDetected === "string"
+      ? notes.patternDetected.trim()
+      : "";
 
   const highlightPhrases = useMemo(() => {
     const set = new Set<string>();
-    if (landed.quote.length > 3) set.add(landed.quote);
-    if (rethink.quote.length > 3) set.add(rethink.quote);
+    if (!notes) return set;
+    if (workedPair.quote.length > 3) set.add(workedPair.quote);
+    if (rethinkPair.quote.length > 3) set.add(rethinkPair.quote);
     return set;
-  }, [landed.quote, rethink.quote]);
+  }, [notes, workedPair.quote, rethinkPair.quote]);
 
   const messages = useMemo(
     () => normalizeMessages(session?.transcript),
     [session?.transcript]
   );
+
+  const transcriptPreview = useMemo(() => {
+    if (transcriptExpanded) return messages;
+    return messages.slice(0, TRANSCRIPT_PREVIEW_MESSAGES);
+  }, [messages, transcriptExpanded]);
+
+  const hasMoreTranscript =
+    messages.length > TRANSCRIPT_PREVIEW_MESSAGES;
 
   async function handleDelete() {
     if (
@@ -447,6 +519,12 @@ export function NotesClient({
 
   if (!notes) return null;
 
+  const durationSec = session?.duration_seconds;
+  const isShortSession =
+    typeof durationSec === "number" &&
+    durationSec >= 0 &&
+    durationSec < SHORT_SESSION_MAX_SECONDS;
+
   const dateStr =
     initialDate ||
     new Date().toLocaleDateString("en-US", {
@@ -488,122 +566,157 @@ export function NotesClient({
             Kabir&apos;s take
           </h2>
           <div className="rounded-lg border border-slate-600/50 bg-[#0b1d3e]/55 px-5 py-4 text-[15px] leading-relaxed text-[#E2E8F0] shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-            <p className="font-[450] text-slate-50">{kabirsTake}</p>
-          </div>
-        </section>
-
-        {/* SECTION 2 */}
-        <section>
-          <h2 className="mb-3 text-[11px] font-medium uppercase tracking-widest text-slate-400">
-            Your words
-          </h2>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div
-              className="rounded-lg border-l-2 border-emerald-500/70 bg-[#0b1d3e]/45 px-4 py-3"
-              style={{ borderTopWidth: 0, borderRightWidth: 0, borderBottomWidth: 0 }}
-            >
-              <p className="text-[10px] font-medium uppercase tracking-wider text-emerald-500/90">
-                Landed
-              </p>
-              <p className="mt-2 text-sm text-[#E2E8F0]">{landed.quote}</p>
-              {landed.rest ? (
-                <p className="mt-2 text-xs leading-relaxed text-slate-400">
-                  {landed.rest}
-                </p>
-              ) : null}
-            </div>
-            <div
-              className="rounded-lg border-l-2 border-amber-500/70 bg-[#0b1d3e]/45 px-4 py-3"
-              style={{ borderTopWidth: 0, borderRightWidth: 0, borderBottomWidth: 0 }}
-            >
-              <p className="text-[10px] font-medium uppercase tracking-wider text-amber-500/90">
-                Rethink
-              </p>
-              <p className="mt-2 text-sm text-[#E2E8F0]">{rethink.quote}</p>
-              {rethink.rest ? (
-                <p className="mt-2 text-xs leading-relaxed text-slate-400">
-                  {rethink.rest}
-                </p>
-              ) : null}
-            </div>
-          </div>
-        </section>
-
-        {/* SECTION 3 */}
-        <section>
-          <h2 className="mb-3 text-[11px] font-medium uppercase tracking-widest text-slate-400">
-            Before you walk in
-          </h2>
-          <div className="rounded-lg border border-slate-600/50 bg-[#071a38]/70 px-5 py-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-            <p className="text-lg font-medium leading-snug text-[#E2E8F0]">
-              {beforeYouWalkIn}
+            <p className="font-[450] text-slate-50">
+              {kabirTakeText
+                ? renderWithDoubleQuoteHighlights(kabirTakeText)
+                : "—"}
             </p>
           </div>
         </section>
 
-        {/* SECTION 4 */}
         <section>
-          <button
-            type="button"
-            onClick={() => setDetailsOpen((o) => !o)}
-            className="flex w-full items-center justify-between border-b border-slate-700/40 py-2 text-left"
-          >
-            <span className="text-[11px] font-medium uppercase tracking-widest text-slate-400">
-              Session details
-            </span>
-            <ChevronDown
-              className={`h-4 w-4 text-slate-400 transition-transform ${detailsOpen ? "rotate-180" : ""}`}
-            />
-          </button>
-          {detailsOpen && (
-            <div className="mt-4 space-y-4 font-mono text-xs text-slate-300">
-              <div>
-                <p className="text-[10px] uppercase tracking-wider text-slate-500">
-                  Duration
+          <h2 className="mb-3 text-[11px] font-medium uppercase tracking-widest text-slate-400">
+            Your words
+          </h2>
+          <p className="mb-3 text-xs text-slate-500">
+            Your strongest line and the one to rethink — tied to what you
+            actually said.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div
+              className="rounded-lg border-l-2 border-emerald-500/70 bg-[#0b1d3e]/45 px-4 py-4"
+              style={{
+                borderTopWidth: 0,
+                borderRightWidth: 0,
+                borderBottomWidth: 0,
+              }}
+            >
+              <p className="text-[10px] font-medium uppercase tracking-wider text-emerald-500/90">
+                What worked
+              </p>
+              <p className="mt-3 text-base font-semibold leading-snug text-[#E2E8F0]">
+                {workedPair.quote ? (
+                  <span className="text-[#ecfdf5]">&ldquo;{workedPair.quote}&rdquo;</span>
+                ) : (
+                  <span className="text-slate-500">—</span>
+                )}
+              </p>
+              {workedPair.why ? (
+                <p className="mt-3 text-xs leading-relaxed text-slate-400">
+                  {workedPair.why}
                 </p>
-                <p className="mt-1 text-[#E2E8F0]">
-                  {formatDurationDetailed(session?.duration_seconds)}
+              ) : null}
+            </div>
+            <div
+              className="rounded-lg border-l-2 border-amber-500/70 bg-[#0b1d3e]/45 px-4 py-4"
+              style={{
+                borderTopWidth: 0,
+                borderRightWidth: 0,
+                borderBottomWidth: 0,
+              }}
+            >
+              <p className="text-[10px] font-medium uppercase tracking-wider text-amber-500/90">
+                What to rethink
+              </p>
+              <p className="mt-3 text-base font-semibold leading-snug text-[#E2E8F0]">
+                {rethinkPair.quote ? (
+                  <span className="text-[#fff7ed]">&ldquo;{rethinkPair.quote}&rdquo;</span>
+                ) : (
+                  <span className="text-slate-500">—</span>
+                )}
+              </p>
+              {rethinkPair.why ? (
+                <p className="mt-3 text-xs leading-relaxed text-slate-400">
+                  {rethinkPair.why}
                 </p>
-              </div>
-              <div>
-                <p className="text-[10px] uppercase tracking-wider text-slate-500">
-                  Kabir&apos;s read on your confidence
-                </p>
-                <div className="mt-2">
-                  <ConfidenceBar score={overallScore ?? notes.overall_score ?? null} />
+              ) : null}
+            </div>
+          </div>
+        </section>
+
+        {patternDetected ? (
+          <section className="rounded-lg border-l-[3px] border-violet-500/55 bg-violet-950/20 px-5 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+            <h2 className="mb-2 text-[11px] font-medium uppercase tracking-widest text-violet-300/90">
+              Something I noticed
+            </h2>
+            <p className="text-[15px] leading-relaxed text-violet-100/95">
+              {patternDetected}
+            </p>
+          </section>
+        ) : null}
+
+        <section>
+          <h2 className="mb-3 text-[11px] font-medium uppercase tracking-widest text-slate-400">
+            Before you walk in
+          </h2>
+          <div className="rounded-lg border border-slate-500/45 bg-[#071a38]/90 px-6 py-7 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+            <p className="text-xl font-semibold leading-snug tracking-tight text-[#F8FAFC] sm:text-[1.35rem] sm:leading-snug">
+              {beforeYouWalkIn || "—"}
+            </p>
+          </div>
+        </section>
+
+        {/* Session details — only for sessions longer than 3 minutes */}
+        {!isShortSession ? (
+          <section>
+            <button
+              type="button"
+              onClick={() => setDetailsOpen((o) => !o)}
+              className="flex w-full items-center justify-between border-b border-slate-700/40 py-2 text-left"
+            >
+              <span className="text-[11px] font-medium uppercase tracking-widest text-slate-400">
+                Session details
+              </span>
+              <ChevronDown
+                className={`h-4 w-4 text-slate-400 transition-transform ${detailsOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+            {detailsOpen && (
+              <div className="mt-4 space-y-4 font-mono text-xs text-slate-300">
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-slate-500">
+                    Duration
+                  </p>
+                  <p className="mt-1 text-[#E2E8F0]">
+                    {formatDurationDetailed(session?.duration_seconds)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-slate-500">
+                    Session confidence (estimate)
+                  </p>
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    A rough read of how ready you sounded for the real
+                    conversation—not talk-time or word counts (those are noisy
+                    from voice transcripts).
+                  </p>
+                  <p className="mt-2 font-mono text-sm text-[#E2E8F0]">
+                    {(overallScore ?? notes.overall_score) != null
+                      ? `${Math.round(Number(overallScore ?? notes.overall_score))} / 100`
+                      : "—"}
+                  </p>
+                  <div className="mt-2">
+                    <ConfidenceBar
+                      score={overallScore ?? notes.overall_score ?? null}
+                    />
+                  </div>
                 </div>
               </div>
-              <div>
-                <p className="text-[10px] uppercase tracking-wider text-slate-500">
-                  Talk time
-                </p>
-                <p className="mt-1 text-[#E2E8F0]">
-                  {messages.length === 0
-                    ? "No transcript yet"
-                    : `You: ${stats.userRatio}% / Kabir: ${stats.assistantRatio}%`}
-                </p>
-              </div>
-              <div>
-                <p className="text-[10px] uppercase tracking-wider text-slate-500">
-                  Filler words
-                </p>
-                <p className="mt-1 text-[#E2E8F0]">
-                  {stats.fillers.length > 0
-                    ? stats.fillers
-                        .map((f) => `${f.word} (${f.count})`)
-                        .join(", ")
-                    : "—"}
-                </p>
-              </div>
-            </div>
-          )}
-        </section>
+            )}
+          </section>
+        ) : null}
 
         {/* SECTION 5 */}
         <section>
           <button
             type="button"
-            onClick={() => setTranscriptOpen((o) => !o)}
+            onClick={() =>
+              setTranscriptOpen((o) => {
+                const next = !o;
+                if (!next) setTranscriptExpanded(false);
+                return next;
+              })
+            }
             className="flex w-full items-center justify-between border-b border-slate-700/40 py-2 text-left"
           >
             <span className="text-[11px] font-medium uppercase tracking-widest text-slate-400">
@@ -618,7 +731,7 @@ export function NotesClient({
               {messages.length === 0 ? (
                 <p className="text-slate-400">Transcript not available yet.</p>
               ) : (
-                messages.map((m, i) => {
+                transcriptPreview.map((m, i) => {
                   const role = (m.role || "").toLowerCase();
                   const isUser =
                     role === "user" || role === "customer";
@@ -650,6 +763,28 @@ export function NotesClient({
                   );
                 })
               )}
+              {messages.length > 0 &&
+              hasMoreTranscript &&
+              !transcriptExpanded ? (
+                <button
+                  type="button"
+                  onClick={() => setTranscriptExpanded(true)}
+                  className="mt-2 w-full rounded border border-slate-600/60 bg-slate-900/40 py-2 text-xs font-medium text-cyan-200/90 transition-colors hover:border-cyan-500/50 hover:bg-slate-900/60"
+                >
+                  Read full transcript ({messages.length} messages)
+                </button>
+              ) : null}
+              {messages.length > 0 &&
+              hasMoreTranscript &&
+              transcriptExpanded ? (
+                <button
+                  type="button"
+                  onClick={() => setTranscriptExpanded(false)}
+                  className="mt-2 w-full rounded border border-slate-700/50 py-2 text-xs text-slate-400 hover:text-slate-200"
+                >
+                  Show less
+                </button>
+              ) : null}
             </div>
           )}
         </section>

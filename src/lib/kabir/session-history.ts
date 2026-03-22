@@ -35,6 +35,7 @@ export async function getRecentSessionSummariesForPrompt(
     const r = reportBySession.get(s.id);
     const moments = r?.moments as Record<string, unknown> | undefined;
     const sum =
+      (typeof moments?.kabirTake === "string" && moments.kabirTake) ||
       (typeof moments?.summary === "string" && moments.summary) ||
       (typeof r?.summary === "string" && r.summary) ||
       "";

@@ -3,7 +3,8 @@ import { createSupabaseAdmin } from "@/lib/supabase/server";
 import { sessionBelongsToUser } from "@/lib/session-access";
 import { NextResponse } from "next/server";
 
-const MS_24H = 24 * 60 * 60 * 1000;
+/** Aligned with notes UI: check-in available 1h after session (real convo may be same day) */
+const MS_AFTER_SESSION = 60 * 60 * 1000;
 
 export async function POST(
   req: Request,
@@ -49,9 +50,12 @@ export async function POST(
   }
 
   const created = new Date(sessionRow.created_at as string).getTime();
-  if (Number.isNaN(created) || Date.now() - created < MS_24H) {
+  if (Number.isNaN(created) || Date.now() - created < MS_AFTER_SESSION) {
     return NextResponse.json(
-      { error: "Outcome can only be submitted 24 hours after the session was created." },
+      {
+        error:
+          "Check-in unlocks about an hour after this session so you can report on the real conversation.",
+      },
       { status: 400 }
     );
   }

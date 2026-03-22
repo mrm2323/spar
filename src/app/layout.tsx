@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { ClerkProvider } from "@clerk/nextjs";
 import { DM_Sans, IBM_Plex_Mono } from "next/font/google";
 import { AmplitudeBootstrap } from "@/components/analytics/AmplitudeBootstrap";
@@ -17,9 +18,9 @@ const ibmMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SPAR — AI voice practice for difficult conversations",
+  title: "SPAR — AI voice companion for hard conversations",
   description:
-    "Practice out loud with an AI voice coach. Realistic pushback, clear coaching—before salary talks, boundaries, feedback, and hard personal conversations.",
+    "Rehearse out loud with Kabir. Real pushback, notes you can use—before raises, boundaries, feedback, and the talks you’ve been putting off.",
 };
 
 export default function RootLayout({
@@ -34,7 +35,9 @@ export default function RootLayout({
           className={`${dmSans.variable} ${ibmMono.variable} font-sans antialiased bg-[#0A0A0F] text-zinc-50`}
           suppressHydrationWarning
         >
-          <AmplitudeBootstrap />
+          <Suspense fallback={null}>
+            <AmplitudeBootstrap />
+          </Suspense>
           {children}
         </body>
       </html>

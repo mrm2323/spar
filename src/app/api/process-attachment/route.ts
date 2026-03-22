@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { extractTextFromPdfBuffer, isPdfUpload } from "@/lib/pdf-text";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
@@ -35,15 +36,36 @@ export async function POST(req: Request) {
       if (text.length > 15000) {
         text = text.slice(0, 15000) + "\n\n[Content truncated — file was very long]";
       }
-    } else if (type === "application/pdf") {
-      const buffer = Buffer.from(await file.arrayBuffer());
-      const { PDFParse } = await import("pdf-parse");
-      const pdf = new PDFParse({ data: new Uint8Array(buffer) });
-      const result = await pdf.getText();
-      text = result.text;
-      await pdf.destroy();
+    } else if (isPdfUpload(file)) {
+      const buf = await file.arrayBuffer();
+      text = await extractTextFromPdfBuffer(buf);
+      if (!text) {
+        return NextResponse.json(
+          {
+            error:
+              "Could not read text from this PDF (it may be scanned images only). Try exporting as text or Word, or paste the text instead.",
+          },
+          { status: 422 }
+        );
+      }
       if (text.length > 15000) {
-        text = text.slice(0, 15000) + "\n\n[Content truncated — PDF was very long]";
+        text =
+          text.slice(0, 15000) +
+          "\n\n[Content truncated — PDF was very long]";
+      }
+    } else if (
+      type ===
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+      file.name.toLowerCase().endsWith(".docx")
+    ) {
+      const buffer = Buffer.from(await file.arrayBuffer());
+      const mammoth = await import("mammoth");
+      const result = await mammoth.extractRawText({ buffer });
+      text = result.value;
+      if (text.length > 15000) {
+        text =
+          text.slice(0, 15000) +
+          "\n\n[Content truncated — document was very long]";
       }
     } else if (type.startsWith("image/")) {
       const buffer = Buffer.from(await file.arrayBuffer());
@@ -80,9 +102,14 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ text, fileName: file.name });
   } catch (err) {
-    console.error("[ATTACHMENT] Processing error:", err);
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[ATTACHMENT] Processing error:", message, err);
     return NextResponse.json(
-      { error: "Failed to process file" },
+      {
+        error: "Failed to process file",
+        detail:
+          process.env.NODE_ENV === "development" ? message : undefined,
+      },
       { status: 500 }
     );
   }

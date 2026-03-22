@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Paperclip, Loader2, Check } from "lucide-react";
+import { Paperclip, Loader2, Check, Monitor, Square } from "lucide-react";
 import Vapi from "@vapi-ai/web";
 import { trackEvent } from "@/lib/analytics";
 
@@ -13,6 +13,46 @@ type SessionStatus =
   | "ended"
   | "error";
 type SpeakingState = "listening" | "kabir" | "idle";
+
+function isUserCancelledDisplayMedia(e: unknown): boolean {
+  const d = e as { name?: string };
+  return d?.name === "NotAllowedError" || d?.name === "AbortError";
+}
+
+/** Wait until the screen-capture video element has drawable frames (or timeout). */
+function waitUntilVideoHasSize(
+  video: HTMLVideoElement,
+  timeoutMs: number
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    const ok = () =>
+      video.videoWidth >= 2 &&
+      video.videoHeight >= 2 &&
+      video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
+    if (ok()) {
+      resolve(true);
+      return;
+    }
+    let done = false;
+    const finish = (result: boolean) => {
+      if (done) return;
+      done = true;
+      clearTimeout(tid);
+      video.removeEventListener("loadeddata", onReady);
+      video.removeEventListener("loadedmetadata", onReady);
+      video.removeEventListener("playing", onReady);
+      video.removeEventListener("resize", onReady);
+      resolve(result);
+    };
+    const onReady = () => {
+      if (ok()) finish(true);
+    };
+    const tid = window.setTimeout(() => finish(false), timeoutMs);
+    video.addEventListener("loadeddata", onReady);
+    video.addEventListener("loadedmetadata", onReady);
+    video.addEventListener("playing", onReady);
+  });
+}
 
 export default function SessionPage() {
   const params = useParams<{ id: string }>();
@@ -33,6 +73,22 @@ export default function SessionPage() {
   const callIdRef = useRef<string | null>(null);
   const endingRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const screenStreamRef = useRef<MediaStream | null>(null);
+  const screenIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  /** Prevents overlapping getDisplayMedia (double-clicks / picker still open). */
+  const screenShareStartingRef = useRef(false);
+  /** Abort in-flight screen-context fetch when user stops sharing or cancels. */
+  const screenCaptureAbortRef = useRef<AbortController | null>(null);
+  /** Bumps when a new capture starts or sharing stops — stale async work must not touch UI. */
+  const screenCaptureGenerationRef = useRef(0);
+  const [screenSharing, setScreenSharing] = useState(false);
+  /** True while permission picker is open or stream is wiring up */
+  const [screenShareBusy, setScreenShareBusy] = useState(false);
+  const [screenStatus, setScreenStatus] = useState<
+    "idle" | "processing" | "done"
+  >("idle");
+  const [screenError, setScreenError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) {
@@ -153,6 +209,8 @@ export default function SessionPage() {
       const file = e.target.files?.[0];
       if (!file || !vapiRef.current) return;
 
+      const vapi = vapiRef.current;
+
       setAttachError(null);
       setAttachStatus("processing");
       trackEvent("attachment_upload_started", {
@@ -184,12 +242,27 @@ export default function SessionPage() {
           return;
         }
 
-        if (data.text && vapiRef.current) {
-          vapiRef.current.send({
+        if (!data.text?.trim()) {
+          setAttachStatus("idle");
+          setAttachError("Could not read text from this file. Try PDF, TXT, or an image.");
+          return;
+        }
+
+        if (vapi) {
+          const excerpt =
+            data.text.length > 14_000
+              ? `${data.text.slice(0, 14_000)}\n\n[Truncated — file was long]`
+              : data.text;
+          // User-role + triggerResponse so the assistant actually speaks; system-only
+          // injections often never get a spoken reply in live calls.
+          vapi.send({
             type: "add-message",
+            triggerResponseEnabled: true,
             message: {
-              role: "system",
-              content: `[The user just shared a file: "${file.name}"]\n\nHere is the content:\n${data.text}\n\nAcknowledge that you received it and reference any relevant content naturally in the conversation.`,
+              role: "user",
+              content:
+                `[The user shared a file during this call: "${file.name}". Here is the extracted text. Acknowledge briefly that you received it, reference one or two relevant details if useful, then continue helping with their conversation.]\n\n` +
+                excerpt,
             },
           });
           setAttachStatus("done");
@@ -217,6 +290,212 @@ export default function SessionPage() {
     [id]
   );
 
+  const stopScreenShare = useCallback(() => {
+    screenCaptureGenerationRef.current += 1;
+    screenCaptureAbortRef.current?.abort();
+    screenCaptureAbortRef.current = null;
+    if (screenIntervalRef.current) {
+      clearInterval(screenIntervalRef.current);
+      screenIntervalRef.current = null;
+    }
+    screenStreamRef.current?.getTracks().forEach((t) => t.stop());
+    screenStreamRef.current = null;
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setScreenSharing(false);
+    setScreenStatus("idle");
+    screenShareStartingRef.current = false;
+    setScreenShareBusy(false);
+  }, []);
+
+  const captureAndSendScreen = useCallback(async () => {
+    screenCaptureGenerationRef.current += 1;
+    const generation = screenCaptureGenerationRef.current;
+    const ac = new AbortController();
+    screenCaptureAbortRef.current?.abort();
+    screenCaptureAbortRef.current = ac;
+
+    // Clear any stuck "Reading screen…" from a superseded capture.
+    setScreenStatus("idle");
+
+    const video = videoRef.current;
+    const vapi = vapiRef.current;
+    if (!video || !vapi) {
+      return;
+    }
+
+    const hasSize = await waitUntilVideoHasSize(video, 6000);
+    if (generation !== screenCaptureGenerationRef.current) return;
+    if (
+      !hasSize ||
+      video.videoWidth < 2 ||
+      video.videoHeight < 2
+    ) {
+      return;
+    }
+
+    if (generation !== screenCaptureGenerationRef.current) return;
+
+    setScreenError(null);
+    setScreenStatus("processing");
+
+    const fetchTimeoutMs = 90_000;
+    const fetchTimeoutId = window.setTimeout(() => ac.abort(), fetchTimeoutMs);
+
+    try {
+      const maxW = 1280;
+      const scale = Math.min(1, maxW / video.videoWidth);
+      const w = Math.round(video.videoWidth * scale);
+      const h = Math.round(video.videoHeight * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("no canvas");
+      ctx.drawImage(video, 0, 0, w, h);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.72);
+      const base64 = dataUrl.split(",")[1];
+      if (!base64) throw new Error("empty frame");
+
+      if (generation !== screenCaptureGenerationRef.current) return;
+
+      const res = await fetch("/api/screen-context", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageBase64: base64,
+          mimeType: "image/jpeg",
+        }),
+        signal: ac.signal,
+      });
+      const data = await res.json();
+
+      if (generation !== screenCaptureGenerationRef.current) return;
+
+      if (!res.ok) {
+        setScreenError(
+          typeof data.error === "string" ? data.error : "Screen capture failed"
+        );
+        setScreenStatus("idle");
+        return;
+      }
+      const description = String(data.description || "").trim();
+      if (!description) {
+        setScreenError("Could not read your screen.");
+        setScreenStatus("idle");
+        return;
+      }
+
+      const excerpt =
+        description.length > 8000
+          ? `${description.slice(0, 8000)}\n[Truncated]`
+          : description;
+
+      vapi.send({
+        type: "add-message",
+        triggerResponseEnabled: true,
+        message: {
+          role: "user",
+          content:
+            `[The user is sharing their screen with you. Here is what is visible right now — use it as context for coaching; do not read it aloud unless it helps.]\n\n${excerpt}`,
+        },
+      });
+      setScreenStatus("done");
+      trackEvent("screen_context_sent", { session_id: id });
+      setTimeout(() => {
+        if (generation === screenCaptureGenerationRef.current) {
+          setScreenStatus("idle");
+        }
+      }, 2500);
+    } catch (e) {
+      if (generation !== screenCaptureGenerationRef.current) return;
+      const err = e as { name?: string };
+      if (err?.name === "AbortError") {
+        setScreenStatus("idle");
+        return;
+      }
+      console.error("Screen capture failed:", e);
+      setScreenError("Could not send screen.");
+      setScreenStatus("idle");
+    } finally {
+      clearTimeout(fetchTimeoutId);
+      if (screenCaptureAbortRef.current === ac) {
+        screenCaptureAbortRef.current = null;
+      }
+    }
+  }, [id]);
+
+  const startScreenShare = useCallback(async () => {
+    if (!vapiRef.current) return;
+    if (screenShareStartingRef.current) return;
+
+    screenShareStartingRef.current = true;
+    setScreenShareBusy(true);
+    setScreenError(null);
+
+    try {
+      // `video: true` keeps the picker offering full screen, window, and tab across browsers.
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: false,
+      });
+
+      const video = videoRef.current;
+      if (!video) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+
+      screenStreamRef.current = stream;
+      const track = stream.getVideoTracks()[0];
+      if (track) {
+        track.onended = () => stopScreenShare();
+      }
+
+      video.srcObject = stream;
+      video.muted = true;
+      video.playsInline = true;
+      await video.play().catch(() => {});
+
+      setScreenSharing(true);
+
+      // First capture after frames are available (handled inside captureAndSendScreen).
+      window.setTimeout(() => void captureAndSendScreen(), 400);
+
+      if (screenIntervalRef.current) clearInterval(screenIntervalRef.current);
+      screenIntervalRef.current = setInterval(() => {
+        void captureAndSendScreen();
+      }, 45_000);
+    } catch (e) {
+      console.error("getDisplayMedia:", e);
+      stopScreenShare();
+      if (isUserCancelledDisplayMedia(e)) {
+        setScreenError(
+          "You closed the picker — tap Share screen whenever you want to try again."
+        );
+        window.setTimeout(() => {
+          setScreenError((prev) =>
+            prev?.includes("closed the picker") ? null : prev
+          );
+        }, 5000);
+      } else {
+        setScreenError(
+          "Could not start screen sharing. Check browser permissions and try again."
+        );
+      }
+    } finally {
+      screenShareStartingRef.current = false;
+      setScreenShareBusy(false);
+    }
+  }, [captureAndSendScreen, stopScreenShare]);
+
+  useEffect(() => {
+    return () => {
+      stopScreenShare();
+    };
+  }, [stopScreenShare]);
+
   const endSession = useCallback(async () => {
     if (endingRef.current) return;
     endingRef.current = true;
@@ -227,6 +506,7 @@ export default function SessionPage() {
     });
     setEnding(true);
     setSpeaking("idle");
+    stopScreenShare();
 
     if (vapiRef.current) vapiRef.current.stop();
     setStatus("ended");
@@ -269,7 +549,7 @@ export default function SessionPage() {
         `Could not end this session: ${error instanceof Error ? error.message : "unknown error"}`
       );
     }
-  }, [id, router, speaking, elapsed]);
+  }, [id, router, speaking, elapsed, stopScreenShare]);
 
   const formatTime = (s: number) => {
     const m = Math.floor(s / 60);
@@ -344,6 +624,13 @@ export default function SessionPage() {
 
       {status === "active" && (
         <>
+          <video
+            ref={videoRef}
+            className="pointer-events-none fixed left-0 top-0 h-px w-px opacity-0"
+            playsInline
+            muted
+            aria-hidden
+          />
           <div className="mb-5 flex items-center gap-1.5">
             {Array.from({ length: 5 }).map((_, i) => (
               <div
@@ -372,12 +659,12 @@ export default function SessionPage() {
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*,.pdf,.txt,.md,.csv,.json"
+            accept="image/*,.pdf,.txt,.md,.csv,.json,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             onChange={handleFileUpload}
             className="hidden"
           />
 
-          <div className="fixed bottom-24 left-1/2 flex -translate-x-1/2 items-center gap-6 rounded-full border border-slate-700/60 bg-slate-950/70 px-4 py-2 backdrop-blur">
+          <div className="fixed bottom-24 left-1/2 flex max-w-[95vw] -translate-x-1/2 flex-wrap items-center justify-center gap-3 rounded-full border border-slate-700/60 bg-slate-950/70 px-4 py-2 backdrop-blur">
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={attachStatus === "processing"}
@@ -397,6 +684,42 @@ export default function SessionPage() {
                   : "Share a file"}
             </button>
 
+            {!screenSharing ? (
+              <button
+                type="button"
+                onClick={() => void startScreenShare()}
+                disabled={screenShareBusy}
+                className="flex items-center gap-1.5 text-xs text-slate-500 transition-colors hover:text-cyan-300 disabled:pointer-events-none disabled:opacity-40"
+              >
+                <Monitor className="h-3.5 w-3.5" />
+                {screenShareBusy ? "Choose a screen…" : "Share screen"}
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={stopScreenShare}
+                  className="flex items-center gap-1.5 text-xs text-rose-300/90 transition-colors hover:text-rose-200"
+                >
+                  <Square className="h-3.5 w-3.5" />
+                  Stop screen
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void captureAndSendScreen()}
+                  disabled={screenStatus === "processing"}
+                  className="text-xs text-cyan-400/90 hover:text-cyan-300 disabled:opacity-50"
+                >
+                  {screenStatus === "processing"
+                    ? "Reading screen…"
+                    : "Send screen now"}
+                </button>
+                {screenStatus === "done" ? (
+                  <span className="text-[10px] text-emerald-500/90">Sent</span>
+                ) : null}
+              </>
+            )}
+
             <button
               onClick={endSession}
               disabled={ending}
@@ -406,9 +729,15 @@ export default function SessionPage() {
             </button>
           </div>
 
-          {attachError ? (
-            <p className="fixed bottom-14 left-1/2 -translate-x-1/2 text-center text-xs text-red-400">
-              {attachError}
+          {(attachError || screenError) ? (
+            <p className="fixed bottom-14 left-1/2 max-w-md -translate-x-1/2 px-4 text-center text-xs text-red-400">
+              {attachError || screenError}
+            </p>
+          ) : null}
+          {screenSharing ? (
+            <p className="fixed bottom-28 left-1/2 max-w-sm -translate-x-1/2 px-4 text-center text-[11px] text-slate-500">
+              Screen context is sent now and every 45s. Kabir uses it quietly—he
+              won&apos;t read your screen aloud unless it helps.
             </p>
           ) : null}
         </>

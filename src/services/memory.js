@@ -286,9 +286,13 @@ Return empty array [] if no facts to extract.
 
 /**
  * List recent memories for review UI.
+ * Empty search queries often return nothing from vector search — use a broad semantic query.
  */
 export async function listMemories(userId, options = {}) {
-  return recall(userId, options.query || "", { limit: options.limit || 30 });
+  const broadQuery =
+    options.query ||
+    "user facts identity goals career relationships communication coaching sessions habits patterns struggles preferences";
+  return recall(userId, broadQuery, { limit: options.limit || 40 });
 }
 
 /**

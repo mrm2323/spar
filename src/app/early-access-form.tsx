@@ -43,8 +43,8 @@ export function EarlyAccessForm() {
 
   return (
     <div className="mt-10 w-full max-w-lg">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-        Start practicing
+      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500">
+        Get started
       </p>
       <form
         onSubmit={onSubmit}

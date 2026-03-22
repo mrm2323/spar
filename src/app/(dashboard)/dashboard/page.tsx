@@ -335,7 +335,7 @@ function DashboardInner() {
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept="image/*,.pdf,.txt,.md,.csv,.json"
+                    accept="image/*,.pdf,.txt,.md,.csv,.json,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                     onChange={handleFileUpload}
                     className="hidden"
                   />

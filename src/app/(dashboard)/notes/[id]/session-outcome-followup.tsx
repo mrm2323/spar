@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-const MS_24H = 24 * 60 * 60 * 1000;
+/** Enough time to have had the real conversation, without waiting a full day */
+const MS_AFTER_SESSION = 60 * 60 * 1000; // 1 hour
 
 function isEligible(createdAtIso: string | null): boolean {
   if (!createdAtIso) return false;
   const t = new Date(createdAtIso).getTime();
   if (Number.isNaN(t)) return false;
-  return Date.now() - t >= MS_24H;
+  return Date.now() - t >= MS_AFTER_SESSION;
 }
 
 export function SessionOutcomeFollowUp({
@@ -80,7 +81,8 @@ export function SessionOutcomeFollowUp({
     return (
       <section className="mt-8 rounded-lg border border-slate-700/50 bg-slate-950/40 px-5 py-5">
         <p className="text-center text-sm text-slate-500">
-          Kabir heard you. This helps him get better.
+          Thanks—that real-world signal helps Spar focus on what actually
+          helps next time.
         </p>
       </section>
     );
@@ -91,8 +93,13 @@ export function SessionOutcomeFollowUp({
   return (
     <section className="mt-8 rounded-lg border border-slate-700/50 bg-slate-950/40 px-5 py-5">
       <h2 className="text-center text-base font-medium text-[#E2E8F0]">
-        Did you have the conversation?
+        After the real conversation
       </h2>
+      <p className="mx-auto mt-2 max-w-md text-center text-sm text-slate-500">
+        When you&apos;ve had the talk you practiced (even if it went sideways),
+        tell us how it landed. Optional note helps us tune Kabir and the
+        product—not a scorecard.
+      </p>
       <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:justify-center">
         <button
           type="button"

@@ -6,6 +6,7 @@ import {
   defaultResumeFirstMessage,
 } from "@/lib/kabir/resume-context";
 import { buildKabirPrompt } from "@/lib/kabir/system-prompt";
+import { getMemoryPreference } from "@/lib/memory/preferences";
 import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
@@ -64,9 +65,12 @@ export async function POST(req: Request) {
       }
     }
 
-    const memoryText = await buildFullKabirContext(userId, supabase, {
-      resumeSessionId: effectiveResumeSessionId,
-    });
+    const memoryEnabled = await getMemoryPreference(userId);
+    const memoryText = memoryEnabled
+      ? await buildFullKabirContext(userId, supabase, {
+          resumeSessionId: effectiveResumeSessionId,
+        })
+      : "";
 
     const systemPrompt = buildKabirPrompt({
       scenarioRaw: effectiveContext || undefined,
@@ -95,7 +99,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const hasHistory = memoryText.trim().length > 40;
+    const hasHistory = memoryEnabled && memoryText.trim().length > 40;
 
     return NextResponse.json({
       sessionId: session.id,

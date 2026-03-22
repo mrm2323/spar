@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 
 type MemoryEntry = {
   id: string;
@@ -13,13 +14,24 @@ type MemoryEntry = {
   };
 };
 
+type TimelineItem = {
+  id: string;
+  date: string | null;
+  context: string;
+  summary: string;
+};
+
 export default function MemorySettingsPage() {
   const [enabled, setEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
+  const [entriesError, setEntriesError] = useState<string | null>(null);
   const [draftById, setDraftById] = useState<Record<string, string>>({});
   const [newGoal, setNewGoal] = useState("");
+  const [timeline, setTimeline] = useState<TimelineItem[]>([]);
+  const [timelineLoading, setTimelineLoading] = useState(true);
+  const [supermemoryConfigured, setSupermemoryConfigured] = useState(true);
 
   async function loadPreferences() {
     const res = await fetch("/api/memory/preferences");
@@ -28,13 +40,19 @@ export default function MemorySettingsPage() {
   }
 
   async function loadEntries() {
+    setEntriesError(null);
     const res = await fetch("/api/memory", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "list", limit: 40 }),
     });
     const data = await res.json();
-    if (!res.ok) return;
+    if (!res.ok) {
+      setEntriesError(
+        typeof data.error === "string" ? data.error : "Could not load memory list."
+      );
+      return;
+    }
 
     const items = (data.memories || []) as MemoryEntry[];
     setEntries(items);
@@ -43,8 +61,24 @@ export default function MemorySettingsPage() {
     setDraftById(drafts);
   }
 
+  async function loadTimeline() {
+    setTimelineLoading(true);
+    try {
+      const res = await fetch("/api/memory/history");
+      const data = await res.json();
+      if (res.ok) {
+        setTimeline((data.timeline || []) as TimelineItem[]);
+        setSupermemoryConfigured(Boolean(data.supermemoryConfigured));
+      }
+    } finally {
+      setTimelineLoading(false);
+    }
+  }
+
   useEffect(() => {
-    Promise.all([loadPreferences(), loadEntries()]).finally(() => setLoading(false));
+    Promise.all([loadPreferences(), loadEntries(), loadTimeline()]).finally(() =>
+      setLoading(false)
+    );
   }, []);
 
   const goalEntries = useMemo(
@@ -161,6 +195,16 @@ export default function MemorySettingsPage() {
         <p className="mt-2 text-sm text-slate-300">
           Control whether Kabir uses memory in coaching, and review/edit stored facts.
         </p>
+        {!supermemoryConfigured && (
+          <p className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100/95">
+            Long-term semantic memory (Supermemory) is not configured on the server.
+            Kabir still uses your{" "}
+            <strong className="font-medium">recent practice timeline</strong> from this
+            app. Ask your admin to set{" "}
+            <code className="rounded bg-slate-950/60 px-1">SUPERMEMORY_API_KEY</code> for
+            full recall across sessions.
+          </p>
+        )}
 
         <div className="mt-4 flex items-center justify-between gap-4 rounded-lg border border-slate-700/60 bg-slate-900/30 px-4 py-3">
           <div>
@@ -216,12 +260,77 @@ export default function MemorySettingsPage() {
       </section>
 
       <section className="rounded-xl border border-slate-700/60 bg-[#0b1d3e]/45 p-5">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-300">
+          Practice history
+        </h2>
+        <p className="mt-1 text-xs text-slate-400">
+          Completed sessions and Kabir&apos;s take — this timeline is always stored here
+          so coaching can stay continuous even when cloud memory is still indexing.
+        </p>
+        {timelineLoading ? (
+          <p className="mt-3 text-sm text-slate-500">Loading history…</p>
+        ) : timeline.length === 0 ? (
+          <p className="mt-3 text-sm text-slate-400">
+            No completed sessions yet. Finish a call and open Kabir&apos;s notes to build
+            your history.
+          </p>
+        ) : (
+          <ul className="mt-4 space-y-3">
+            {timeline.map((row) => (
+              <li
+                key={row.id}
+                className="rounded-lg border border-slate-700/50 bg-slate-900/35 p-3 text-sm"
+              >
+                <div className="flex flex-wrap items-baseline justify-between gap-2 text-[11px] text-slate-500">
+                  <span>
+                    {row.date
+                      ? new Date(row.date).toLocaleString(undefined, {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        })
+                      : "—"}
+                  </span>
+                  <Link
+                    href={`/notes/${row.id}`}
+                    className="text-cyan-400/90 hover:text-cyan-300"
+                  >
+                    View notes →
+                  </Link>
+                </div>
+                {row.context ? (
+                  <p className="mt-2 text-slate-300">
+                    <span className="text-slate-500">Topic: </span>
+                    {row.context}
+                  </p>
+                ) : null}
+                {row.summary ? (
+                  <p className="mt-1 text-slate-400 line-clamp-4">{row.summary}</p>
+                ) : (
+                  <p className="mt-1 text-xs text-slate-500">Notes still generating…</p>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="rounded-xl border border-slate-700/60 bg-[#0b1d3e]/45 p-5">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-300">Stored memory</h2>
-        <p className="mt-1 text-xs text-slate-400">Edit or remove any incorrect extracted fact.</p>
+        <p className="mt-1 text-xs text-slate-400">
+          Facts Kabir can retrieve (semantic memory). Edit or remove anything wrong.
+        </p>
+        {entriesError ? (
+          <p className="mt-3 text-sm text-amber-200/90">{entriesError}</p>
+        ) : null}
 
         <div className="mt-4 space-y-3">
-          {entries.length === 0 && (
-            <p className="text-sm text-slate-400">No memory entries yet.</p>
+          {!entriesError && entries.length === 0 && (
+            <p className="text-sm text-slate-400">
+              No individual memory entries yet. They appear after calls when facts are
+              extracted, or add a goal above. If you expect many entries, confirm{" "}
+              <code className="rounded bg-slate-950/60 px-1">SUPERMEMORY_API_KEY</code> is
+              set — without it, only the practice timeline above is stored.
+            </p>
           )}
 
           {entries.map((entry) => (
