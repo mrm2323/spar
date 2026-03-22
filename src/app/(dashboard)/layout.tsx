@@ -20,7 +20,13 @@ export default function DashboardLayout({
           >
             spar
           </Link>
-          <div className="flex items-center">
+          <div className="flex items-center gap-3">
+            <Link
+              href="/dashboard/settings"
+              className="rounded-md border border-cyan-400/30 bg-cyan-400/10 px-3 py-1.5 text-xs font-medium text-cyan-100 transition-colors hover:border-cyan-300/50 hover:bg-cyan-400/20"
+            >
+              Memory
+            </Link>
             <UserButton
               appearance={{
                 elements: {

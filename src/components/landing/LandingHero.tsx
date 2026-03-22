@@ -52,7 +52,7 @@ export function LandingHero({
               href="/dashboard/settings"
               className="rounded-lg border border-white/14 bg-white/[0.05] px-3 py-2 text-sm font-medium text-slate-100 transition-colors hover:border-white/24 hover:bg-white/[0.08] sm:px-4"
             >
-              Profile
+              Memory
             </Link>
           ) : null}
         </nav>
