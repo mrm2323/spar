@@ -84,6 +84,11 @@ create index if not exists idx_session_outcomes_created_at on session_outcomes(c
 
 alter table session_outcomes enable row level security;
 
+create policy "Service role can manage session outcomes"
+  on session_outcomes for all
+  using (current_setting('role')::text = 'service_role')
+  with check (current_setting('role')::text = 'service_role');
+
 -- Immediate end-of-call feedback (CSAT + recommendation score)
 create table if not exists session_feedback (
   id uuid primary key default gen_random_uuid(),

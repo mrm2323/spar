@@ -12,4 +12,9 @@ CREATE INDEX IF NOT EXISTS idx_session_outcomes_session_id ON session_outcomes (
 CREATE INDEX IF NOT EXISTS idx_session_outcomes_created_at ON session_outcomes (created_at DESC);
 
 ALTER TABLE session_outcomes ENABLE ROW LEVEL SECURITY;
--- Inserts/reads go through Next.js API with service role (bypasses RLS).
+
+DROP POLICY IF EXISTS "Service role can manage session outcomes" ON session_outcomes;
+CREATE POLICY "Service role can manage session outcomes"
+  ON session_outcomes FOR ALL
+  USING (current_setting('role')::text = 'service_role')
+  WITH CHECK (current_setting('role')::text = 'service_role');
