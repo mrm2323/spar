@@ -6,7 +6,7 @@ import { sessionReplayPlugin } from "@amplitude/plugin-session-replay-browser";
 const AMPLITUDE_API_KEY = process.env.NEXT_PUBLIC_AMPLITUDE_API_KEY?.trim() || "";
 const AMPLITUDE_ALLOWED_HOSTS = (
   process.env.NEXT_PUBLIC_AMPLITUDE_ALLOWED_HOSTS ||
-  "spar-ai.vercel.app,.vercel.app,localhost,127.0.0.1"
+  "spar-ai.vercel.app"
 )
   .split(",")
   .map((v) => v.trim().toLowerCase())

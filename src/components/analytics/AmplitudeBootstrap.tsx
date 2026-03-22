@@ -8,10 +8,12 @@ import { identifyUser, initAnalytics, setAnalyticsUser, trackEvent } from "@/lib
 export function AmplitudeBootstrap() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { user } = useUser();
+  const { user, isLoaded } = useUser();
   const lastPathRef = useRef<string>("");
 
   useEffect(() => {
+    if (!isLoaded) return;
+
     initAnalytics(user?.id ?? null);
     setAnalyticsUser(user?.id ?? null);
     if (user?.primaryEmailAddress?.emailAddress) {
@@ -19,7 +21,7 @@ export function AmplitudeBootstrap() {
         email_domain: user.primaryEmailAddress.emailAddress.split("@")[1] || "unknown",
       });
     }
-  }, [user?.id, user?.primaryEmailAddress?.emailAddress]);
+  }, [isLoaded, user?.id, user?.primaryEmailAddress?.emailAddress]);
 
   useEffect(() => {
     const pathWithQuery = `${pathname || ""}${searchParams?.toString() ? `?${searchParams.toString()}` : ""}`;
