@@ -12,9 +12,15 @@ const SCENARIOS = [
 
 type LandingHeroProps = {
   isSignedIn?: boolean;
+  isApproved?: boolean;
+  waitlistStatus?: "unknown" | "none" | "pending" | "approved" | "rejected";
 };
 
-export function LandingHero({ isSignedIn = false }: LandingHeroProps) {
+export function LandingHero({
+  isSignedIn = false,
+  isApproved = false,
+  waitlistStatus = "unknown",
+}: LandingHeroProps) {
   return (
     <div className="relative flex min-h-screen flex-col overflow-hidden bg-[#030712] text-white">
       <div
@@ -107,14 +113,42 @@ export function LandingHero({ isSignedIn = false }: LandingHeroProps) {
           </p>
 
           {isSignedIn ? (
-            <div className="mt-10">
-              <Link
-                href="/dashboard"
-                className="inline-flex min-h-[48px] items-center rounded-xl bg-gradient-to-b from-cyan-300 to-cyan-500 px-6 py-3 text-sm font-semibold text-slate-950 shadow-[0_0_0_1px_rgba(255,255,255,0.1)_inset,0_10px_28px_rgba(34,211,238,0.25)] transition-all hover:from-cyan-200 hover:to-cyan-400"
-              >
-                Open mic dashboard
-              </Link>
-            </div>
+            isApproved ? (
+              <div className="mt-10 flex flex-wrap items-center gap-3">
+                <Link
+                  href="/dashboard"
+                  className="inline-flex min-h-[48px] items-center rounded-xl bg-gradient-to-b from-cyan-300 to-cyan-500 px-6 py-3 text-sm font-semibold text-slate-950 shadow-[0_0_0_1px_rgba(255,255,255,0.1)_inset,0_10px_28px_rgba(34,211,238,0.25)] transition-all hover:from-cyan-200 hover:to-cyan-400"
+                >
+                  Open mic dashboard
+                </Link>
+                <Link
+                  href="/dashboard/settings"
+                  className="inline-flex min-h-[48px] items-center rounded-xl border border-white/14 bg-white/[0.05] px-6 py-3 text-sm font-medium text-slate-100 transition-colors hover:border-white/24 hover:bg-white/[0.08]"
+                >
+                  Profile
+                </Link>
+              </div>
+            ) : (
+              <div className="mt-10 max-w-lg rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+                <p className="text-sm text-amber-100">
+                  {waitlistStatus === "pending"
+                    ? "Your account is on the waitlist. We will unlock access after approval."
+                    : waitlistStatus === "rejected"
+                      ? "This account is currently not approved for beta access. Contact us if this looks wrong."
+                      : waitlistStatus === "none"
+                        ? "This signed-in email is not on the waitlist yet. Join the waitlist with this email to be considered."
+                        : "Your account does not have beta access yet. Join the waitlist or wait for approval."}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Link
+                    href="/beta/pending"
+                    className="inline-flex min-h-[40px] items-center rounded-lg border border-amber-400/60 bg-amber-500/20 px-4 py-2 text-sm font-medium text-amber-100 hover:bg-amber-500/30"
+                  >
+                    Check access status
+                  </Link>
+                </div>
+              </div>
+            )
           ) : (
             <EarlyAccessForm />
           )}
@@ -133,24 +167,6 @@ export function LandingHero({ isSignedIn = false }: LandingHeroProps) {
           Kabir is an AI companion — not a human coach or therapist. Built for
           when the stakes are high and the words matter.
         </p>
-        {!isSignedIn ? (
-          <p className="mt-4 text-slate-600">
-            Already invited to the beta?{" "}
-            <Link
-              href="/sign-in"
-              className="text-slate-400 underline decoration-slate-600 underline-offset-2 transition-colors hover:text-cyan-400"
-            >
-              Sign in
-            </Link>
-            {" · "}
-            <Link
-              href="/sign-up"
-              className="text-slate-400 underline decoration-slate-600 underline-offset-2 transition-colors hover:text-cyan-400"
-            >
-              Create account
-            </Link>
-          </p>
-        ) : null}
         <p className="mt-3">
           <a
             href="mailto:kabir.spar.ai@gmail.com"
