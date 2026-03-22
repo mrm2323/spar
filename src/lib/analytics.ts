@@ -1,19 +1,51 @@
 "use client";
 
-/**
- * Analytics no-op until you wire Amplitude (or another provider).
- *
- * Later: `npm install @amplitude/analytics-browser`, set `NEXT_PUBLIC_AMPLITUDE_API_KEY`,
- * and replace this module with real `init` / `track` / `identify` calls.
- */
+import * as amplitude from "@amplitude/analytics-browser";
 
-export function initAnalytics(_userId?: string | null): void {}
+const AMPLITUDE_API_KEY = process.env.NEXT_PUBLIC_AMPLITUDE_API_KEY?.trim() || "";
+let initialized = false;
 
-export function setAnalyticsUser(_userId: string | null | undefined): void {}
+function canSendAnalytics(): boolean {
+  return typeof window !== "undefined" && AMPLITUDE_API_KEY.length > 0;
+}
 
-export function identifyUser(_properties: Record<string, string | number | boolean>): void {}
+export function initAnalytics(userId?: string | null): void {
+  if (!canSendAnalytics() || initialized) return;
+
+  amplitude.init(AMPLITUDE_API_KEY, userId ?? undefined, {
+    autocapture: true,
+    defaultTracking: {
+      pageViews: false,
+      sessions: true,
+      formInteractions: true,
+      fileDownloads: true,
+    },
+  });
+
+  initialized = true;
+}
+
+export function setAnalyticsUser(userId: string | null | undefined): void {
+  if (!canSendAnalytics()) return;
+  amplitude.setUserId(userId ?? undefined);
+}
+
+export function identifyUser(
+  properties: Record<string, string | number | boolean>
+): void {
+  if (!canSendAnalytics()) return;
+
+  const identify = new amplitude.Identify();
+  for (const [key, value] of Object.entries(properties)) {
+    identify.set(key, value);
+  }
+  amplitude.identify(identify);
+}
 
 export function trackEvent(
-  _eventName: string,
-  _eventProperties?: Record<string, unknown>
-): void {}
+  eventName: string,
+  eventProperties?: Record<string, unknown>
+): void {
+  if (!canSendAnalytics()) return;
+  amplitude.track(eventName, eventProperties);
+}
