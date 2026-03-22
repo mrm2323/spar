@@ -14,6 +14,15 @@ function canSendAnalytics(): boolean {
 export function initAnalytics(userId?: string | null): void {
   if (!canSendAnalytics() || initialized) return;
 
+  if (!replayAttached) {
+    // Attach replay plugin to the default analytics instance before init.
+    const replay = sessionReplayPlugin({
+      sampleRate: 1,
+    });
+    amplitude.add(replay);
+    replayAttached = true;
+  }
+
   amplitude.init(AMPLITUDE_API_KEY, userId ?? undefined, {
     autocapture: true,
     defaultTracking: {
@@ -23,16 +32,6 @@ export function initAnalytics(userId?: string | null): void {
       fileDownloads: true,
     },
   });
-
-  if (!replayAttached) {
-    // Attach replay after init so both streams share the same established device/session identity.
-    const replay = sessionReplayPlugin({
-      sampleRate: 1,
-      forceSessionTracking: false,
-    });
-    amplitude.add(replay);
-    replayAttached = true;
-  }
 
   initialized = true;
 }
