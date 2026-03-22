@@ -77,43 +77,38 @@ export async function getUserSessionUsage(
 
   const userIds = await getSessionUserIds(supabase, userId);
   
-  // Get user's last reset time
-  const { data: userReset, error: resetError } = await supabase
-    .from("users")
-    .select("daily_cap_reset_at")
-    .in("id", userIds)
-    .single();
-
-  if (resetError && resetError.code !== 'PGRST116') {
-    throw new Error(`Failed to fetch reset time: ${resetError.message}`);
-  }
-  
   let resetCutoff = getMostRecentResetTime();
   
-  // If user's last reset is after the calculated reset, use that
-  if (userReset?.daily_cap_reset_at) {
-    const userResetDate = new Date(userReset.daily_cap_reset_at);
-    const calculatedReset = getMostRecentResetTime();
-    if (userResetDate > calculatedReset) {
-      resetCutoff = userResetDate;
+  // Try to get user's last reset time (gracefully fall back if column doesn't exist yet)
+  try {
+    const { data: userReset, error: resetError } = await supabase
+      .from("users")
+      .select("daily_cap_reset_at")
+      .in("id", userIds)
+      .single();
+
+    if (!resetError && userReset?.daily_cap_reset_at) {
+      const userResetDate = new Date(userReset.daily_cap_reset_at);
+      const calculatedReset = getMostRecentResetTime();
+      
+      // Use the later of the two reset times
+      if (userResetDate > calculatedReset) {
+        resetCutoff = userResetDate;
+      }
+      
+      // Check if we need to update the reset timestamp (only if user hasn't reset today)
+      if (userResetDate < calculatedReset) {
+        await supabase
+          .from("users")
+          .update({ daily_cap_reset_at: calculatedReset.toISOString() })
+          .in("id", userIds)
+          .catch(() => {}); // Silently ignore update errors
+        resetCutoff = calculatedReset;
+      }
     }
-  }
-  
-  // Check if we need to update the reset timestamp
-  const now = new Date();
-  const nextReset = getNextResetTime();
-  if (now < nextReset && userReset) {
-    const userResetDate = new Date(userReset.daily_cap_reset_at);
-    const calculatedReset = getMostRecentResetTime();
-    
-    // Update if user's reset is before today's reset cutoff
-    if (userResetDate < calculatedReset) {
-      await supabase
-        .from("users")
-        .update({ daily_cap_reset_at: calculatedReset.toISOString() })
-        .in("id", userIds);
-      resetCutoff = calculatedReset;
-    }
+  } catch {
+    // Migration not yet applied - just use calculated reset time
+    resetCutoff = getMostRecentResetTime();
   }
 
   const { data, error } = await supabase
