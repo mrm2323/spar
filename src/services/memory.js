@@ -1,8 +1,13 @@
-import Supermemory from 'supermemory';
+import Supermemory from "supermemory";
+import {
+  addUserMemory,
+  getMemoryContext,
+  searchMemory,
+  userContainerTag,
+} from "@/lib/kabir/memory";
 
 // ============================================
-// KABIR MEMORY SERVICE
-// Persistent memory using Supermemory API
+// KABIR MEMORY SERVICE (Supermemory v3)
 // ============================================
 
 const SERVER_SUPERMEMORY_API_KEY = process.env.SUPERMEMORY_API_KEY;
@@ -12,86 +17,68 @@ const supermemory = SERVER_SUPERMEMORY_API_KEY
   ? new Supermemory({ apiKey: SERVER_SUPERMEMORY_API_KEY })
   : null;
 
-// Memory categories
-const MEMORY_CATEGORIES = {
-  IDENTITY: 'identity',         // Name, age, location, background
-  ACADEMIC: 'academic',         // School, major, grades, goals
-  CAREER: 'career',             // Jobs, interviews, aspirations
-  RELATIONSHIPS: 'relationships', // Friends, family, romantic
-  HEALTH: 'health',             // Physical, mental, habits
-  GOALS: 'goals',               // Short-term, long-term
-  PREFERENCES: 'preferences',   // Likes, dislikes, communication style
-  EVENTS: 'events',             // Important dates, milestones
-  STRUGGLES: 'struggles',       // Challenges, fears, anxieties
+export const MEMORY_CATEGORIES = {
+  IDENTITY: "identity",
+  ACADEMIC: "academic",
+  CAREER: "career",
+  RELATIONSHIPS: "relationships",
+  HEALTH: "health",
+  GOALS: "goals",
+  PREFERENCES: "preferences",
+  EVENTS: "events",
+  STRUGGLES: "struggles",
 };
 
-// ============================================
-// CORE FUNCTIONS
-// ============================================
-
 /**
- * Store a memory about the user
+ * Store a memory about the user (REST v3 via kabir/memory)
  */
 export async function remember(userId, content, category, metadata = {}) {
-  if (!supermemory) return null;
-  try {
-    const result = await supermemory.add({
-      content,
-      containerTag: `kabir_user_${userId}`,
-      metadata: {
-        category: category || 'general',
-        importance: metadata.importance || 3, // 1-5 scale
-        emotion: metadata.emotion || 'neutral',
-        timestamp: new Date().toISOString(),
-        ...metadata,
-      },
-    });
-    return result;
-  } catch (error) {
-    console.error('Memory store error:', error);
-    return null;
-  }
+  await addUserMemory(userId, content, {
+    category: category || "general",
+    importance: metadata.importance || 3,
+    emotion: metadata.emotion || "neutral",
+    ...metadata,
+  });
+  return { ok: true };
 }
 
 /**
  * Search for relevant memories
  */
 export async function recall(userId, query, options = {}) {
-  if (!supermemory) return [];
-  try {
-    const result = await supermemory.search({
-      containerTag: `kabir_user_${userId}`,
-      q: query,
-      topK: options.limit || 5,
-    });
-    return result.results || [];
-  } catch (error) {
-    console.error('Memory recall error:', error);
-    return [];
-  }
+  const limit = options.limit || 5;
+  const lines = await searchMemory(userId, query || "");
+  return lines.slice(0, limit).map((content, i) => ({ id: String(i), content }));
 }
 
 /**
- * Get user's memory profile (static + dynamic facts)
+ * Profile for prompts — uses full context search + optional query refinement
  */
-export async function getProfile(userId, currentContext = '') {
-  if (!supermemory) {
+export async function getProfile(userId, currentContext = "") {
+  if (!SERVER_SUPERMEMORY_API_KEY) {
     return { staticFacts: [], dynamicContext: [], relevantMemories: [] };
   }
+
   try {
-    const result = await supermemory.profile({
-      containerTag: `kabir_user_${userId}`,
-      q: currentContext,
-      includeProfile: true,
-    });
-    
+    const base = await getMemoryContext(userId);
+    if (currentContext?.trim()) {
+      const hits = await searchMemory(userId, currentContext.trim());
+      return {
+        staticFacts: base ? [base] : [],
+        dynamicContext: [],
+        relevantMemories: hits.map((content, i) => ({
+          id: String(i),
+          content,
+        })),
+      };
+    }
     return {
-      staticFacts: result.profile?.static || [],
-      dynamicContext: result.profile?.dynamic || [],
-      relevantMemories: result.searchResults || [],
+      staticFacts: base ? [base] : [],
+      dynamicContext: [],
+      relevantMemories: [],
     };
   } catch (error) {
-    console.error('Memory profile error:', error);
+    console.error("Memory profile error:", error);
     return {
       staticFacts: [],
       dynamicContext: [],
@@ -104,11 +91,11 @@ export async function getProfile(userId, currentContext = '') {
  * Extract and store facts from a conversation
  */
 export async function extractAndRemember(userId, messages) {
-  if (!SERVER_OPENAI_API_KEY || !supermemory) return [];
-  // Use OpenAI to extract facts
+  if (!SERVER_OPENAI_API_KEY || !SERVER_SUPERMEMORY_API_KEY) return [];
+
   const conversationText = messages
-    .map(m => `${m.role}: ${m.content}`)
-    .join('\n');
+    .map((m) => `${m.role}: ${m.content}`)
+    .join("\n");
 
   const extractionPrompt = `
 Analyze this conversation and extract important facts about the USER that Kabir (the AI) should remember.
@@ -138,36 +125,34 @@ Return empty array [] if no facts to extract.
 `;
 
   try {
-    const response = await fetch(
-      'https://api.openai.com/v1/chat/completions',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${SERVER_OPENAI_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          temperature: 0.2,
-          max_tokens: 1000,
-          messages: [
-            { role: 'system', content: 'Extract user facts and return only JSON array.' },
-            { role: 'user', content: extractionPrompt },
-          ],
-        }),
-      }
-    );
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${SERVER_OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        temperature: 0.2,
+        max_tokens: 1000,
+        messages: [
+          {
+            role: "system",
+            content: "Extract user facts and return only JSON array.",
+          },
+          { role: "user", content: extractionPrompt },
+        ],
+      }),
+    });
 
     const data = await response.json();
-    const text = data.choices?.[0]?.message?.content || '[]';
-    
-    // Parse JSON
+    const text = data.choices?.[0]?.message?.content || "[]";
+
     const jsonMatch = text.match(/\[[\s\S]*\]/);
     if (!jsonMatch) return [];
-    
+
     const facts = JSON.parse(jsonMatch[0]);
 
-    // Store each fact
     for (const fact of facts) {
       await remember(userId, fact.content, fact.category, {
         importance: fact.importance,
@@ -177,72 +162,62 @@ Return empty array [] if no facts to extract.
 
     return facts;
   } catch (error) {
-    console.error('Fact extraction error:', error);
+    console.error("Fact extraction error:", error);
     return [];
   }
 }
 
-/**
- * Delete a specific memory
- */
 export async function forget(userId, memoryId) {
   if (!supermemory) return false;
   try {
     await supermemory.delete({
-      containerTag: `kabir_user_${userId}`,
+      containerTag: userContainerTag(userId),
       id: memoryId,
     });
     return true;
   } catch (error) {
-    console.error('Memory delete error:', error);
+    console.error("Memory delete error:", error);
     return false;
   }
 }
 
-/**
- * Clear all memories for a user
- */
 export async function forgetAll(userId) {
   if (!supermemory) return false;
   try {
     await supermemory.deleteContainer({
-      containerTag: `kabir_user_${userId}`,
+      containerTag: userContainerTag(userId),
     });
     return true;
   } catch (error) {
-    console.error('Memory clear error:', error);
+    console.error("Memory clear error:", error);
     return false;
   }
 }
 
-// ============================================
-// HELPER FUNCTIONS
-// ============================================
-
-/**
- * Format memories for use in prompts
- */
 export function formatMemoriesForPrompt(profile) {
   const sections = [];
 
   if (profile.staticFacts?.length > 0) {
-    sections.push(`## What I Know About You:\n${profile.staticFacts.map(f => `- ${f}`).join('\n')}`);
+    sections.push(
+      `## What I Know About You:\n${profile.staticFacts.map((f) => `- ${f}`).join("\n")}`
+    );
   }
 
   if (profile.dynamicContext?.length > 0) {
-    sections.push(`## Recent Context:\n${profile.dynamicContext.map(f => `- ${f}`).join('\n')}`);
+    sections.push(
+      `## Recent Context:\n${profile.dynamicContext.map((f) => `- ${f}`).join("\n")}`
+    );
   }
 
   if (profile.relevantMemories?.length > 0) {
-    sections.push(`## Relevant Memories:\n${profile.relevantMemories.map(m => `- ${m.content}`).join('\n')}`);
+    sections.push(
+      `## Relevant Memories:\n${profile.relevantMemories.map((m) => `- ${m.content}`).join("\n")}`
+    );
   }
 
-  return sections.join('\n\n') || 'Getting to know you...';
+  return sections.join("\n\n") || "Getting to know you...";
 }
 
-/**
- * Check if we have enough context to personalize
- */
 export function hasPersonalization(profile) {
   return (
     (profile.staticFacts?.length > 0) ||

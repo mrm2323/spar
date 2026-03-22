@@ -52,6 +52,21 @@ create index if not exists idx_forensics_session_id on forensics_reports(session
 create index if not exists idx_forensics_user_id on forensics_reports(user_id);
 create index if not exists idx_user_memory_user_id on user_memory(user_id);
 
+-- Session outcomes (post–real-world conversation; optional feedback)
+create table if not exists session_outcomes (
+  id uuid primary key default gen_random_uuid(),
+  session_id uuid not null references sessions(id) on delete cascade,
+  outcome text not null check (outcome in ('well', 'tough')),
+  user_note text,
+  created_at timestamptz not null default now(),
+  constraint session_outcomes_session_unique unique (session_id)
+);
+
+create index if not exists idx_session_outcomes_session_id on session_outcomes(session_id);
+create index if not exists idx_session_outcomes_created_at on session_outcomes(created_at desc);
+
+alter table session_outcomes enable row level security;
+
 -- RLS policies
 alter table sessions enable row level security;
 alter table forensics_reports enable row level security;

@@ -16,9 +16,9 @@ const ibmMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Spar — Practice the conversation before it counts",
+  title: "SPAR — AI voice practice for difficult conversations",
   description:
-    "Talk to Kabir before your next high-stakes conversation. He becomes the other person and helps you find the right words.",
+    "Practice out loud with an AI voice coach. Realistic pushback, clear coaching—before salary talks, boundaries, feedback, and hard personal conversations.",
 };
 
 export default function RootLayout({

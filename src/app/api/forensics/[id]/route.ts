@@ -1,10 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { createSupabaseAdmin } from "@/lib/supabase/server";
-import {
-  generateKabirNotes,
-  generateMemoryUpdate,
-} from "@/lib/forensics/generate";
-import { after } from "next/server";
+import { generateKabirNotes } from "@/lib/forensics/generate";
 import { NextResponse } from "next/server";
 
 export async function GET(
@@ -60,16 +56,6 @@ export async function POST(
     "[FORENSICS API] Notes ready, fromCache:",
     result.fromCache
   );
-
-  if (!result.fromCache) {
-    after(async () => {
-      try {
-        await generateMemoryUpdate(sessionId, userId);
-      } catch (err) {
-        console.error("[FORENSICS API] Memory update error:", err);
-      }
-    });
-  }
 
   return NextResponse.json({
     status: "ready",

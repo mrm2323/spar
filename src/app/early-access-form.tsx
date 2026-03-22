@@ -38,28 +38,46 @@ export function EarlyAccessForm() {
   }
 
   return (
-    <div className="mt-10 w-full max-w-md">
-      <form onSubmit={onSubmit} className="flex w-full gap-2">
+    <div className="mt-10 w-full max-w-lg">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+        Start practicing
+      </p>
+      <form
+        onSubmit={onSubmit}
+        className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-stretch"
+      >
+        <label htmlFor="early-access-email" className="sr-only">
+          Email for early access
+        </label>
         <input
+          id="early-access-email"
           type="email"
           name="email"
+          autoComplete="email"
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="your@email.com"
-          className="flex-1 rounded-xl border border-white/10 bg-slate-900/70 px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition-colors focus:border-cyan-300/45"
+          placeholder="Work or personal email"
+          className="min-h-[48px] flex-1 rounded-xl border border-white/[0.12] bg-slate-950/60 px-4 py-3 text-sm text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] placeholder:text-slate-500 outline-none transition-colors focus:border-cyan-400/40 focus:ring-2 focus:ring-cyan-400/15"
         />
         <button
           type="submit"
           disabled={status === "submitting"}
-          className="whitespace-nowrap rounded-xl bg-cyan-400 px-5 py-3 text-sm font-semibold text-slate-950 transition-colors hover:bg-cyan-300 disabled:opacity-60"
+          className="min-h-[48px] shrink-0 rounded-xl bg-gradient-to-b from-cyan-300 to-cyan-500 px-6 py-3 text-sm font-semibold text-slate-950 shadow-[0_0_0_1px_rgba(255,255,255,0.1)_inset,0_10px_28px_rgba(34,211,238,0.25)] transition-all hover:from-cyan-200 hover:to-cyan-400 disabled:opacity-60"
         >
-          {status === "submitting" ? "Submitting..." : "Get early access"}
+          {status === "submitting"
+            ? "Sending…"
+            : "Start practicing free"}
         </button>
       </form>
+      <p className="mt-3 text-xs text-slate-500">
+        We&apos;ll email you a link. No spam—just access when you&apos;re in.
+      </p>
 
       {status === "error" && (
-        <p className="mt-3 text-xs text-red-400">{error}</p>
+        <p className="mt-3 text-xs text-red-400" role="alert">
+          {error}
+        </p>
       )}
     </div>
   );

@@ -27,9 +27,15 @@ export default async function NotesPage({
 
   const { data: session } = await supabase
     .from("sessions")
-    .select("duration_seconds, transcript, ended_at, started_at")
+    .select("duration_seconds, transcript, ended_at, started_at, created_at")
     .eq("id", id)
     .single();
+
+  const { data: existingOutcome } = await supabase
+    .from("session_outcomes")
+    .select("id")
+    .eq("session_id", id)
+    .maybeSingle();
 
   return (
     <NotesClient
@@ -52,6 +58,10 @@ export default async function NotesPage({
             }
           : null
       }
+      sessionCreatedAt={
+        session?.created_at ? String(session.created_at) : null
+      }
+      initialOutcomeSubmitted={!!existingOutcome}
     />
   );
 }

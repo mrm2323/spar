@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState, useEffect, useRef, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Mic,
   Loader2,
@@ -46,8 +46,9 @@ interface ProcessedFile {
   text: string;
 }
 
-export default function DashboardPage() {
+function DashboardInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [context, setContext] = useState("");
   const [loading, setLoading] = useState(false);
   const [showContext, setShowContext] = useState(false);
@@ -56,10 +57,50 @@ export default function DashboardPage() {
   const [pattern, setPattern] = useState<PatternInsight | null>(null);
   const [files, setFiles] = useState<ProcessedFile[]>([]);
   const [fileProcessing, setFileProcessing] = useState(false);
+  const [memorySnippet, setMemorySnippet] = useState<string | null>(null);
   // const [phone, setPhone] = useState("");
   // const [phoneSaved, setPhoneSaved] = useState(false);
   // const [linkedPhone, setLinkedPhone] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const resumeHandledRef = useRef(false);
+
+  useEffect(() => {
+    const rid = searchParams?.get("resume");
+    if (!rid || resumeHandledRef.current) return;
+    resumeHandledRef.current = true;
+    setLoading(true);
+    fetch("/api/session/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ resumeSessionId: rid, context: null }),
+    })
+      .then((res) => res.json())
+      .then(
+        (data: {
+          sessionId?: string;
+          systemPrompt?: string;
+          firstMessage?: string;
+        }) => {
+          if (data.sessionId && data.systemPrompt) {
+            sessionStorage.setItem(
+              `spar_session_${data.sessionId}`,
+              JSON.stringify({
+                systemPrompt: data.systemPrompt,
+                firstMessage: data.firstMessage,
+              })
+            );
+            router.replace(`/session/${data.sessionId}`);
+          } else {
+            setLoading(false);
+            resumeHandledRef.current = false;
+          }
+        }
+      )
+      .catch(() => {
+        setLoading(false);
+        resumeHandledRef.current = false;
+      });
+  }, [searchParams, router]);
 
   useEffect(() => {
     fetch("/api/sessions")
@@ -77,6 +118,25 @@ export default function DashboardPage() {
     //   })
     //   .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (sessions.length === 0) {
+      setMemorySnippet(null);
+      return;
+    }
+    let cancelled = false;
+    fetch("/api/kabir/memory-snippet")
+      .then((r) => r.json())
+      .then((data: { snippet?: string | null }) => {
+        if (!cancelled) setMemorySnippet(data.snippet ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setMemorySnippet(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessions.length]);
 
   const handleFileUpload = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -141,7 +201,10 @@ export default function DashboardPage() {
       }
       sessionStorage.setItem(
         `spar_session_${data.sessionId}`,
-        JSON.stringify({ systemPrompt: data.systemPrompt })
+        JSON.stringify({
+          systemPrompt: data.systemPrompt,
+          firstMessage: data.firstMessage,
+        })
       );
       router.push(`/session/${data.sessionId}`);
     } catch {
@@ -178,6 +241,16 @@ export default function DashboardPage() {
               </div>
             )}
           </button>
+
+          {!loading && (
+            <p className="mx-auto mt-4 max-w-lg px-2 text-center text-xs leading-relaxed text-slate-500">
+              {sessions.length === 0
+                ? "First time? Kabir is listening."
+                : memorySnippet
+                  ? `Kabir remembers: ${memorySnippet}`
+                  : "Kabir is building your history as you practice."}
+            </p>
+          )}
 
           <h1 className="text-2xl font-semibold tracking-tight">
             {loading
@@ -388,5 +461,19 @@ export default function DashboardPage() {
       </div>
       */}
     </div>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[40vh] items-center justify-center text-slate-400">
+          Loading…
+        </div>
+      }
+    >
+      <DashboardInner />
+    </Suspense>
   );
 }

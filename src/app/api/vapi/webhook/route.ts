@@ -1,9 +1,7 @@
 import { after } from "next/server";
 import { createSupabaseAdmin } from "@/lib/supabase/server";
-import {
-  generateKabirNotes,
-  generateMemoryUpdate,
-} from "@/lib/forensics/generate";
+import { generateKabirNotes } from "@/lib/forensics/generate";
+import { buildFullKabirContext } from "@/lib/kabir/memory";
 import { buildKabirPrompt } from "@/lib/kabir/system-prompt";
 import { NextResponse } from "next/server";
 
@@ -39,7 +37,6 @@ export async function POST(req: Request) {
       );
 
       let resolvedUserId = phoneNumber ? `phone:${phoneNumber}` : "unknown";
-      let memory = null;
 
       // Try to resolve phone number to a linked Clerk user
       if (phoneNumber) {
@@ -52,7 +49,6 @@ export async function POST(req: Request) {
 
         if (memoryRow) {
           resolvedUserId = memoryRow.user_id;
-          memory = memoryRow;
           console.log(
             "[VAPI WEBHOOK] Resolved phone to user:",
             resolvedUserId
@@ -60,12 +56,13 @@ export async function POST(req: Request) {
         }
       }
 
+      const memoryText = await buildFullKabirContext(resolvedUserId, supabase);
+
       const systemPrompt = buildKabirPrompt({
         scenarioRaw: undefined,
         channel: "phone",
         durationSeconds: 600,
-        userMemory:
-          memory && memory.total_sessions > 0 ? memory.kabir_memory || undefined : undefined,
+        userMemory: memoryText.trim() ? memoryText : undefined,
       });
 
       if (phoneNumber) {
@@ -144,7 +141,6 @@ export async function POST(req: Request) {
         after(async () => {
           try {
             await generateKabirNotes(session.id, session.user_id);
-            await generateMemoryUpdate(session.id, session.user_id);
           } catch (err) {
             console.error("[VAPI WEBHOOK] Post-session processing error:", err);
           }

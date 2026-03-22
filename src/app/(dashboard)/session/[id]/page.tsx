@@ -47,7 +47,11 @@ export default function SessionPage() {
       return;
     }
 
-    const { systemPrompt } = JSON.parse(raw);
+    const parsed = JSON.parse(raw) as {
+      systemPrompt: string;
+      firstMessage?: string;
+    };
+    const { systemPrompt, firstMessage } = parsed;
 
     queueMicrotask(() => setStatus("connecting"));
 
@@ -96,7 +100,9 @@ export default function SessionPage() {
           provider: "vapi",
           voiceId: "Rohan",
         },
-        firstMessage: "Hey. It's Kabir. What conversation are you looking forward to?",
+        firstMessage:
+          firstMessage ||
+          "Hey. It's Kabir. What conversation are you looking forward to?",
         maxDurationSeconds: 600,
         startSpeakingPlan: {
           waitSeconds: 0.6,

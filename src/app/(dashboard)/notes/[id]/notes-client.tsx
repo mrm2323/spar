@@ -10,6 +10,7 @@ import {
   kabirsTakeFromSummary,
   type TranscriptMessage,
 } from "@/lib/transcript-stats";
+import { SessionOutcomeFollowUp } from "./session-outcome-followup";
 
 interface NotesData {
   overall_score?: number;
@@ -65,6 +66,8 @@ export function NotesClient({
   initialDate,
   overallScore: initialOverallScore,
   initialSession,
+  sessionCreatedAt,
+  initialOutcomeSubmitted,
 }: {
   sessionId: string;
   initialNotes?: NotesData | null;
@@ -75,6 +78,8 @@ export function NotesClient({
     transcript: unknown;
     ended_at: string | null;
   } | null;
+  sessionCreatedAt: string | null;
+  initialOutcomeSubmitted: boolean;
 }) {
   const router = useRouter();
   const [notes, setNotes] = useState<NotesData | null>(initialNotes || null);
@@ -91,6 +96,39 @@ export function NotesClient({
   const [deleting, setDeleting] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
+  const [continuing, setContinuing] = useState(false);
+
+  async function continuePractice() {
+    setContinuing(true);
+    try {
+      const res = await fetch("/api/session/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          resumeSessionId: sessionId,
+          context: null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.sessionId) {
+        console.error("Continue session failed:", data);
+        setContinuing(false);
+        return;
+      }
+      sessionStorage.setItem(
+        `spar_session_${data.sessionId}`,
+        JSON.stringify({
+          systemPrompt: data.systemPrompt,
+          firstMessage:
+            data.firstMessage ||
+            "Hey. It's Kabir. What conversation are you looking forward to?",
+        })
+      );
+      router.push(`/session/${data.sessionId}`);
+    } catch {
+      setContinuing(false);
+    }
+  }
 
   useEffect(() => {
     if (notes) return;
@@ -485,13 +523,21 @@ export function NotesClient({
             <Mic className="h-4 w-4" />
             Practice again
           </Link>
-          <span
-            title="Coming soon"
-            className="inline-flex flex-1 cursor-not-allowed items-center justify-center rounded border border-slate-600/70 px-5 py-3 text-center text-sm text-slate-400"
+          <button
+            type="button"
+            disabled={continuing}
+            onClick={continuePractice}
+            className="inline-flex flex-1 items-center justify-center rounded border border-cyan-500/50 bg-cyan-500/10 px-5 py-3 text-center text-sm font-medium text-cyan-100 transition-colors hover:border-cyan-400/70 hover:bg-cyan-500/15 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Call me after
-          </span>
+            {continuing ? "Starting…" : "Continue this practice"}
+          </button>
         </div>
+
+        <SessionOutcomeFollowUp
+          sessionId={sessionId}
+          sessionCreatedAt={sessionCreatedAt}
+          initialSubmitted={initialOutcomeSubmitted}
+        />
 
         <p className="text-center text-[11px] text-slate-500">
           Your conversations are encrypted and never shared.

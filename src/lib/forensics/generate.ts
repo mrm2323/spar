@@ -1,10 +1,64 @@
 import OpenAI from "openai";
 import { createSupabaseAdmin } from "@/lib/supabase/server";
+import {
+  formatKabirNotesForMemory,
+  hasSupermemory,
+  saveSessionMemory,
+  searchMemory,
+  upsertOverallProfileMemory,
+} from "@/lib/kabir/memory";
 
 function getOpenAIClient() {
   return new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
   });
+}
+
+async function generateAndUpsertOverallProfile(
+  userId: string,
+  notes: Record<string, unknown>,
+  transcriptText: string
+): Promise<void> {
+  if (!hasSupermemory() || !process.env.OPENAI_API_KEY) return;
+
+  let prior = "";
+  try {
+    const hits = await searchMemory(userId, "KABIR_RUNNING_PROFILE");
+    prior = hits[0]?.slice(0, 3500) ?? "";
+  } catch {
+    /* noop */
+  }
+
+  const notesText = formatKabirNotesForMemory(notes);
+  const tail = transcriptText.length > 4000 ? transcriptText.slice(-4000) : transcriptText;
+
+  const openai = getOpenAIClient();
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: `You maintain ONE running paragraph Kabir uses to "know" this person across sessions.
+Output a single paragraph (max 200 words). No bullets. No greeting. Third person ("they").
+Cover: what they're preparing for, emotional baseline, recurring weaknesses/strengths, concrete progress.
+Merge PRIOR SNAPSHOT with NEW SESSION; prefer the newest facts when they conflict.`,
+        },
+        {
+          role: "user",
+          content: `PRIOR SNAPSHOT (may be empty):\n${prior || "(none)"}\n\nNEW SESSION NOTES:\n${notesText}\n\nRECENT TRANSCRIPT TAIL:\n${tail}`,
+        },
+      ],
+      max_tokens: 450,
+    });
+
+    const paragraph = completion.choices[0].message.content?.trim();
+    if (paragraph) {
+      await upsertOverallProfileMemory(userId, paragraph);
+    }
+  } catch (e) {
+    console.error("[OVERALL PROFILE] generation failed:", e);
+  }
 }
 
 async function fetchTranscriptFromVapi(
@@ -178,123 +232,22 @@ export async function generateKabirNotes(
       // Still return the notes even if DB save fails — the client can display them
     }
 
+    await saveSessionMemory(
+      userId,
+      sessionId,
+      transcriptText,
+      formatKabirNotesForMemory(notes as Record<string, unknown>)
+    );
+
+    await generateAndUpsertOverallProfile(
+      userId,
+      notes as Record<string, unknown>,
+      transcriptText
+    );
+
     return { notes, fromCache: false };
   } catch (err) {
     console.error("[NOTES] OpenAI generation failed:", err);
     return null;
-  }
-}
-
-const MEMORY_PROMPT = `You are updating Kabir's memory about this user. Based on this session transcript, write a concise memory update (max 200 words) that captures:
-
-- What conversation type they practiced
-- Their primary communication weakness in this session
-- Their primary strength
-- Any patterns you notice (especially if this is a repeat behavior)
-- Their emotional state and confidence level
-- Anything personal they mentioned (upcoming dates, relationships, job situation, names, timelines)
-
-Write this as notes Kabir would keep about someone he's sparring with. Direct. Factual. No fluff. No encouragement. Just what happened and what to remember for next time.
-
-If previous memory is provided, reference it to identify PATTERNS — things that keep showing up across sessions. Call those out explicitly.
-
-Output plain text, not JSON. No bullet points or headers. Just a tight paragraph.`;
-
-export async function generateMemoryUpdate(
-  sessionId: string,
-  userId: string
-): Promise<void> {
-  if (userId.startsWith("phone:")) return;
-
-  const supabase = createSupabaseAdmin();
-
-  const { data: session } = await supabase
-    .from("sessions")
-    .select("transcript, context")
-    .eq("id", sessionId)
-    .single();
-
-  if (!session?.transcript) {
-    console.log("[MEMORY] No transcript for session:", sessionId);
-    return;
-  }
-
-  const { data: existingMemory } = await supabase
-    .from("user_memory")
-    .select("kabir_memory")
-    .eq("user_id", userId)
-    .single();
-
-  const previousMemory = existingMemory?.kabir_memory || "";
-
-  const openai = getOpenAIClient();
-
-  try {
-    const transcriptText =
-      typeof session.transcript === "string"
-        ? session.transcript
-        : JSON.stringify(session.transcript);
-
-    const messages: { role: "system" | "user"; content: string }[] = [
-      { role: "system", content: MEMORY_PROMPT },
-      {
-        role: "user",
-        content: [
-          previousMemory
-            ? `Previous memory about this user:\n${previousMemory}\n\n---\n`
-            : "",
-          `Context they shared: ${session.context || "none"}`,
-          `\nTranscript:\n${transcriptText}`,
-        ].join(""),
-      },
-    ];
-
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages,
-      max_tokens: 300,
-    });
-
-    const update = completion.choices[0].message.content?.trim();
-    if (!update) return;
-
-    const date = new Date().toLocaleDateString("en-US", {
-      month: "long",
-      day: "numeric",
-      year: "numeric",
-    });
-    const entry = `--- Session: ${date} ---\n${update}`;
-    const newMemory = previousMemory
-      ? `${entry}\n\n${previousMemory}`
-      : entry;
-
-    // Trim to prevent unbounded growth (keep ~last 10 sessions worth)
-    const trimmed =
-      newMemory.length > 8000 ? newMemory.slice(0, 8000) : newMemory;
-
-    if (existingMemory) {
-      await supabase
-        .from("user_memory")
-        .update({
-          kabir_memory: trimmed,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("user_id", userId);
-    } else {
-      await supabase.from("user_memory").insert({
-        user_id: userId,
-        kabir_memory: trimmed,
-        total_sessions: 1,
-      });
-    }
-
-    console.log(
-      "[MEMORY] Updated memory for user:",
-      userId,
-      "length:",
-      trimmed.length
-    );
-  } catch (err) {
-    console.error("[MEMORY] Generation failed:", err);
   }
 }

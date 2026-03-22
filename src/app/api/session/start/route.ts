@@ -1,5 +1,10 @@
 import { auth } from "@clerk/nextjs/server";
 import { createSupabaseAdmin } from "@/lib/supabase/server";
+import { buildFullKabirContext } from "@/lib/kabir/memory";
+import {
+  buildResumeContextForPrompt,
+  defaultResumeFirstMessage,
+} from "@/lib/kabir/resume-context";
 import { buildKabirPrompt } from "@/lib/kabir/system-prompt";
 import { NextResponse } from "next/server";
 
@@ -11,26 +16,34 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { context } = body as { context: string | null };
+    const { context, resumeSessionId } = body as {
+      context?: string | null;
+      resumeSessionId?: string | null;
+    };
 
     const supabase = createSupabaseAdmin();
 
-    const { data: memory, error: memoryError } = await supabase
-      .from("user_memory")
-      .select("*")
-      .eq("user_id", userId)
-      .single();
-
-    if (memoryError) {
-      console.log("No existing memory (expected for new users):", memoryError.code);
+    let resumeBlock: string | null = null;
+    if (resumeSessionId) {
+      resumeBlock = await buildResumeContextForPrompt(resumeSessionId, userId);
+      if (!resumeBlock) {
+        return NextResponse.json(
+          { error: "Could not load session to resume" },
+          { status: 400 }
+        );
+      }
     }
+
+    const memoryText = await buildFullKabirContext(userId, supabase, {
+      resumeSessionId: resumeSessionId || null,
+    });
 
     const systemPrompt = buildKabirPrompt({
       scenarioRaw: context || undefined,
       channel: "web",
       durationSeconds: 600,
-      userMemory:
-        memory && memory.total_sessions > 0 ? memory.kabir_memory || undefined : undefined,
+      userMemory: memoryText.trim() ? memoryText : undefined,
+      resumeContext: resumeBlock || undefined,
     });
 
     const { data: session, error } = await supabase
@@ -52,9 +65,16 @@ export async function POST(req: Request) {
       );
     }
 
+    const hasHistory = memoryText.trim().length > 40;
+
     return NextResponse.json({
       sessionId: session.id,
       systemPrompt,
+      firstMessage: resumeSessionId
+        ? defaultResumeFirstMessage()
+        : hasHistory
+          ? "Hey — it's Kabir. I'm with you. What's the conversation today?"
+          : "Hey. It's Kabir. What conversation are you looking forward to?",
     });
   } catch (err) {
     console.error("Session start error:", err);

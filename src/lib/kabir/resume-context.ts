@@ -1,0 +1,76 @@
+import { createSupabaseAdmin } from "@/lib/supabase/server";
+import { sessionBelongsToUser } from "@/lib/session-access";
+
+/**
+ * Build prompt text so Kabir continues a prior practice from DB truth
+ * (context, notes, transcript) — works even if Supermemory is empty.
+ */
+export async function buildResumeContextForPrompt(
+  sessionId: string,
+  userId: string
+): Promise<string | null> {
+  const supabase = createSupabaseAdmin();
+  const allowed = await sessionBelongsToUser(supabase, sessionId, userId);
+  if (!allowed) return null;
+
+  const { data: session } = await supabase
+    .from("sessions")
+    .select("context, transcript, created_at, ended_at")
+    .eq("id", sessionId)
+    .single();
+
+  if (!session) return null;
+
+  const { data: report } = await supabase
+    .from("forensics_reports")
+    .select("moments, summary")
+    .eq("session_id", sessionId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const notes = report?.moments as Record<string, unknown> | undefined;
+  const summary =
+    (typeof notes?.summary === "string" && notes.summary) ||
+    report?.summary ||
+    "";
+  const nextTime = typeof notes?.next_time === "string" ? notes.next_time : "";
+  const whatWorked =
+    typeof notes?.what_worked === "string" ? notes.what_worked : "";
+  const rethink =
+    typeof notes?.what_to_rethink === "string" ? notes.what_to_rethink : "";
+
+  let transcriptExcerpt = "";
+  if (session.transcript) {
+    const t =
+      typeof session.transcript === "string"
+        ? session.transcript
+        : JSON.stringify(session.transcript);
+    transcriptExcerpt = t.length > 6000 ? t.slice(-6000) : t;
+  }
+
+  return `
+════════════════════════
+CONTINUING WHERE YOU LEFT OFF
+════════════════════════
+They tapped "Continue this practice" — this is the SAME situation as before, not a new topic.
+
+Original context they shared: ${session.context?.trim() || "None recorded."}
+
+Your last read on that session (summary): ${summary || "Notes not ready yet — use transcript below."}
+
+What worked in practice: ${whatWorked || "—"}
+What to rethink: ${rethink || "—"}
+Your instruction for the real moment: ${nextTime || "—"}
+
+Recent practice transcript (use names, phrases, and emotional beats from here — this is ground truth):
+${transcriptExcerpt || "(No transcript stored yet — open with: \"We're back on this — what's changed since last time?\")"}
+
+Open the call acknowledging continuation. Do not restart the generic "what conversation" intro.
+Ask what shifted or what they want to tighten, then go straight into another rep.
+`.trim();
+}
+
+export function defaultResumeFirstMessage(): string {
+  return "Hey — we're picking this back up. What's different since last time, or what do you want to run again?";
+}
