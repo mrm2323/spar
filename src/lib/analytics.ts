@@ -21,6 +21,7 @@ let initialized = false;
 let replayAttached = false;
 let currentUserId: string | null = null;
 let hasLoggedDisabledReason = false;
+let replayPluginInstance: any = null;
 
 function firstPartyUrl(pathname: string): string {
   if (typeof window === "undefined") return "";
@@ -130,6 +131,7 @@ export function initAnalytics(userId?: string | null): void {
           ? { configServerUrl: replayConfigServerUrl }
           : {}),
       });
+      replayPluginInstance = replay;
       amplitude.add(replay);
       replayAttached = true;
       console.log("[analytics] Replay plugin attached successfully");
@@ -224,53 +226,61 @@ export function startPracticeReplaySession(
   });
 
   try {
-    // Step 1: Flush any pending events from the last session
-    console.log("[analytics] Flushing pending events from previous session...");
-    try {
-      amplitude.flush();
-    } catch (e) {
-      console.debug("[analytics] flush() error (non-blocking):", e);
+    console.log("[analytics] === NEW PRACTICE SESSION ===", {
+      user: currentUserId,
+      hasPlugin: !!replayPluginInstance,
+      metadata,
+    });
+
+    // CRITICAL: Reset the replay plugin's session so it records a new replay
+    if (replayPluginInstance) {
+      console.log("[analytics] Plugin instance found, checking for reset methods...");
+      const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(replayPluginInstance) || {});
+      console.log("[analytics] Available plugin methods:", methods);
+
+      // Try to call known reset methods
+      const resetMethods = ["resetSession", "startNewReplaySession", "newSession", "reset"];
+      for (const method of resetMethods) {
+        if (typeof replayPluginInstance[method] === "function") {
+          try {
+            console.log(`[analytics] Calling plugin.${method}()`);
+            replayPluginInstance[method]();
+            console.log(`[analytics] ✓ ${method}() succeeded`);
+            break;
+          } catch (err: unknown) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            console.warn(`[analytics] ${method}() failed:`, errMsg);
+          }
+        }
+      }
+    } else {
+      console.warn("[analytics] ❌ No plugin instance - recordings won't start!");
     }
 
-    // Step 2: Generate a brand new Amplitude session ID
-    // The replay plugin should automatically use this for its new replay session
-    // DO NOT clear sr_session_id - let the plugin manage its own session lifecycle
+    // Flush old session
+    amplitude.flush();
+
+    // Set new Amplitude session ID
     const newSessionId = Date.now();
-    console.log("[analytics] Setting new Amplitude session ID:", newSessionId);
-    
-    try {
-      amplitude.setSessionId(newSessionId);
-      console.log("[analytics] Session ID set successfully");
-    } catch (e) {
-      console.error("[analytics] Failed to set session ID:", e);
-    }
+    amplitude.setSessionId(newSessionId);
+    console.log("[analytics] Session ID updated:", newSessionId);
 
-    // Step 3: Track that a new practice session started
-    // This event helps us correlate the session ID with the practice activity
-    try {
-      amplitude.track("practice_session_started", {
-        new_session_id: newSessionId,
-        timestamp: Date.now(),
-        ...metadata,
-      });
-      console.log("[analytics] Session start event tracked");
-    } catch (e) {
-      console.debug("[analytics] track() error:", e);
-    }
+    // Track event
+    amplitude.track("practice_session_started", {
+      session_id: newSessionId,
+      timestamp: Date.now(),
+      ...metadata,
+    });
 
-    // Step 4: Flush this event immediately so it's associated with the new session
-    try {
-      amplitude.flush();
-      console.log("[analytics] Flushed session start event");
-    } catch (e) {
-      console.debug("[analytics] flush() error:", e);
-    }
+    // Flush immediately
+    amplitude.flush();
 
-    console.log("[analytics] === Practice session initialization complete ===", {
+    console.log("[analytics] === READY ===", {
       session_id: newSessionId,
       user_id: currentUserId,
     });
-  } catch (e) {
-    console.error("[analytics] Unexpected error in startPracticeReplaySession:", e);
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error("[analytics] ERROR:", errMsg);
   }
 }
