@@ -12,7 +12,7 @@ const AMPLITUDE_REPLAY_CONFIG_SERVER_URL =
   process.env.NEXT_PUBLIC_AMPLITUDE_REPLAY_CONFIG_SERVER_URL?.trim() || "";
 const AMPLITUDE_ALLOWED_HOSTS = (
   process.env.NEXT_PUBLIC_AMPLITUDE_ALLOWED_HOSTS ||
-  "spar-ai.vercel.app"
+  ""
 )
   .split(",")
   .map((v) => v.trim().toLowerCase())
@@ -20,6 +20,7 @@ const AMPLITUDE_ALLOWED_HOSTS = (
 let initialized = false;
 let replayAttached = false;
 let currentUserId: string | null = null;
+let hasLoggedDisabledReason = false;
 
 function firstPartyUrl(pathname: string): string {
   if (typeof window === "undefined") return "";
@@ -27,6 +28,9 @@ function firstPartyUrl(pathname: string): string {
 }
 
 function hostAllowed(hostname: string): boolean {
+  // Fail open when no allowlist is provided, so analytics cannot silently stop on new domains.
+  if (AMPLITUDE_ALLOWED_HOSTS.length === 0) return true;
+
   const host = hostname.toLowerCase();
   return AMPLITUDE_ALLOWED_HOSTS.some((allowed) => {
     if (allowed.startsWith(".")) {
@@ -38,8 +42,53 @@ function hostAllowed(hostname: string): boolean {
 
 function canSendAnalytics(): boolean {
   if (typeof window === "undefined") return false;
-  if (AMPLITUDE_API_KEY.length === 0) return false;
-  return hostAllowed(window.location.hostname);
+  if (AMPLITUDE_API_KEY.length === 0) {
+    if (!hasLoggedDisabledReason) {
+      console.warn("[analytics] disabled: NEXT_PUBLIC_AMPLITUDE_API_KEY is missing");
+      hasLoggedDisabledReason = true;
+    }
+    return false;
+  }
+
+  const allowed = hostAllowed(window.location.hostname);
+  if (!allowed && !hasLoggedDisabledReason) {
+    console.warn(
+      `[analytics] disabled: hostname ${window.location.hostname} not in NEXT_PUBLIC_AMPLITUDE_ALLOWED_HOSTS`
+    );
+    hasLoggedDisabledReason = true;
+  }
+  return allowed;
+}
+
+export function getAnalyticsClientStatus(): {
+  initialized: boolean;
+  keyPresent: boolean;
+  currentHost: string | null;
+  hostAllowed: boolean;
+  allowlist: string[];
+  eventsServerUrl: string | null;
+  replayTrackServerUrl: string | null;
+  replayConfigServerUrl: string | null;
+} {
+  const currentHost =
+    typeof window !== "undefined" ? window.location.hostname.toLowerCase() : null;
+
+  return {
+    initialized,
+    keyPresent: AMPLITUDE_API_KEY.length > 0,
+    currentHost,
+    hostAllowed: currentHost ? hostAllowed(currentHost) : false,
+    allowlist: AMPLITUDE_ALLOWED_HOSTS,
+    eventsServerUrl:
+      AMPLITUDE_EVENTS_SERVER_URL ||
+      (typeof window !== "undefined" ? firstPartyUrl("/api/amplitude/events") : null),
+    replayTrackServerUrl:
+      AMPLITUDE_REPLAY_TRACK_SERVER_URL ||
+      (typeof window !== "undefined" ? firstPartyUrl("/api/amplitude/replay-track") : null),
+    replayConfigServerUrl:
+      AMPLITUDE_REPLAY_CONFIG_SERVER_URL ||
+      (typeof window !== "undefined" ? firstPartyUrl("/api/amplitude/replay-config") : null),
+  };
 }
 
 export function initAnalytics(userId?: string | null): void {
