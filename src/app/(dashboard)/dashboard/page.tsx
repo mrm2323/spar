@@ -63,9 +63,8 @@ function DashboardInner() {
 
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [context, setContext] = useState("");
+  const [contextText, setContextText] = useState("");
   const [loading, setLoading] = useState(false);
-  const [showContext, setShowContext] = useState(false);
   const [showAllSessions, setShowAllSessions] = useState(false);
   const [sessions, setSessions] = useState<PastSession[]>([]);
   const [pattern, setPattern] = useState<PatternInsight | null>(null);
@@ -241,24 +240,25 @@ function DashboardInner() {
     setStartError(null);
     trackEvent("session_start_clicked", {
       source: "dashboard",
-      has_context: Boolean(context.trim()),
+      has_context: Boolean(contextText.trim()),
       attached_files_count: files.length,
     });
     try {
-      let fullContext = context.trim() || "";
+      let merged = contextText.trim() || "";
       if (files.length > 0) {
         const fileContext = files
           .map((f) => `[Attached: ${f.name}]\n${f.text}`)
           .join("\n\n");
-        fullContext = fullContext
-          ? `${fullContext}\n\n${fileContext}`
-          : fileContext;
+        merged = merged ? `${merged}\n\n${fileContext}` : fileContext;
       }
 
       const res = await fetch("/api/session/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ context: fullContext || null }),
+        body: JSON.stringify({
+          context: merged || null,
+          contextText: merged || undefined,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.sessionId) {
@@ -333,14 +333,85 @@ function DashboardInner() {
           </button>
 
           {!loading && (
-            <p className="mx-auto mt-4 max-w-lg px-2 text-center text-xs leading-relaxed text-slate-500">
-              {sessions.length === 0
-                ? "First time? Kabir is listening."
-                : memorySnippet
-                  ? `Kabir remembers: ${memorySnippet}`
-                  : "Kabir is building your history as you practice."}
-            </p>
+            <details className="mx-auto mt-6 w-full max-w-xl text-left [&_summary::-webkit-details-marker]:hidden">
+              <summary className="cursor-pointer list-none text-sm font-medium text-slate-400 transition-colors hover:text-slate-200">
+                <span className="inline-flex items-center gap-2">
+                  Add context for Kabir
+                  <span className="text-[10px] text-slate-600">▼</span>
+                </span>
+              </summary>
+              <div className="mt-4 space-y-3 border-t border-slate-800/80 pt-4">
+                <label htmlFor="kabir-context-paste" className="sr-only">
+                  Context for Kabir
+                </label>
+                <textarea
+                  id="kabir-context-paste"
+                  value={contextText}
+                  onChange={(e) => setContextText(e.target.value)}
+                  placeholder="Paste an email, message, job description, or anything Kabir should read before your session."
+                  rows={6}
+                  className="w-full rounded-lg border border-slate-700/55 bg-slate-900/55 px-4 py-3 text-sm text-white placeholder-slate-500 outline-none focus:border-cyan-500/60"
+                />
+                <p className="text-xs leading-relaxed text-slate-500">
+                  Kabir will read this before your conversation starts.
+                </p>
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*,.pdf,.txt,.md,.csv,.json,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+
+                {files.length > 0 && (
+                  <div className="space-y-1.5">
+                    {files.map((f, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center gap-2 rounded-lg border border-slate-700/40 bg-slate-900/25 px-3 py-1.5 text-xs text-slate-300"
+                      >
+                        <Paperclip className="h-3 w-3 shrink-0" />
+                        <span className="min-w-0 truncate">{f.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeFile(i)}
+                          className="ml-auto shrink-0 text-slate-500 hover:text-slate-300"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={fileProcessing}
+                  className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-300 disabled:opacity-50"
+                >
+                  {fileProcessing ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Paperclip className="h-3 w-3" />
+                  )}
+                  {fileProcessing ? "Processing..." : "Attach a file"}
+                </button>
+
+                {fileError ? (
+                  <p className="text-xs text-red-400">{fileError}</p>
+                ) : null}
+              </div>
+            </details>
           )}
+
+          {!loading && memorySnippet ? (
+            <p className="mx-auto mt-4 flex max-w-lg items-center justify-center gap-2 px-2 text-center text-xs leading-relaxed text-slate-400">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" aria-hidden />
+              <span>Kabir remembers your last session.</span>
+            </p>
+          ) : null}
 
           {capStatus ? (
             <p className="mx-auto mt-5 max-w-lg text-center text-sm text-cyan-300/80">
@@ -381,78 +452,6 @@ function DashboardInner() {
           <p className="mx-auto mt-6 max-w-xl text-base leading-relaxed text-slate-300">
             Kabir is an AI coach. Practice first, then walk in ready.
           </p>
-
-          {!loading && (
-            <div className="mt-6">
-              {!showContext ? (
-                <button
-                  type="button"
-                  onClick={() => setShowContext(true)}
-                  className="text-sm text-slate-400 hover:text-slate-200"
-                >
-                  Add context for Kabir
-                </button>
-              ) : (
-                <div className="mx-auto max-w-sm animate-fade-in">
-                  <textarea
-                    value={context}
-                    onChange={(e) => setContext(e.target.value)}
-                    placeholder="e.g. I need to tell my roommate I'm moving out..."
-                    rows={2}
-                    autoFocus
-                    className="w-full rounded-lg border border-slate-700/55 bg-slate-900/55 px-4 py-3 text-sm text-white placeholder-slate-500 outline-none focus:border-cyan-500/60"
-                  />
-
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*,.pdf,.txt,.md,.csv,.json,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                  />
-
-                  {files.length > 0 && (
-                    <div className="mt-2 space-y-1.5">
-                      {files.map((f, i) => (
-                        <div
-                          key={i}
-                          className="flex items-center gap-2 rounded-lg border border-slate-700/40 bg-slate-900/25 px-3 py-1.5 text-xs text-slate-300"
-                        >
-                          <Paperclip className="h-3 w-3 shrink-0" />
-                          <span className="min-w-0 truncate">{f.name}</span>
-                          <button
-                            type="button"
-                            onClick={() => removeFile(i)}
-                            className="ml-auto shrink-0 text-slate-500 hover:text-slate-300"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={fileProcessing}
-                    className="mt-2 flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-300 disabled:opacity-50"
-                  >
-                    {fileProcessing ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <Paperclip className="h-3 w-3" />
-                    )}
-                    {fileProcessing ? "Processing..." : "Attach a file"}
-                  </button>
-
-                  {fileError ? (
-                    <p className="mt-2 text-xs text-red-400">{fileError}</p>
-                  ) : null}
-                </div>
-              )}
-            </div>
-          )}
         </div>
       </div>
 
@@ -460,7 +459,7 @@ function DashboardInner() {
       <div className="mt-8 border-t border-slate-800/70 pt-14">
         {sessions.length > 0 ? (
           <>
-            <h2 className="mb-7 text-sm font-semibold uppercase tracking-widest text-slate-300\">
+            <h2 className="mb-7 text-sm font-semibold uppercase tracking-widest text-slate-300">
               Your conversation threads
             </h2>
             <div className="space-y-4">
@@ -468,7 +467,7 @@ function DashboardInner() {
                 <Link
                   key={session.id}
                   href={`/notes/${session.id}`}
-                  className="block rounded-lg border border-slate-600/50 bg-[#0b1d3e]/55 px-5 py-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition-colors hover:border-cyan-500/50\"
+                  className="block rounded-lg border border-slate-600/50 bg-[#0b1d3e]/55 px-5 py-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition-colors hover:border-cyan-500/50"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">

@@ -9,6 +9,7 @@ import {
   ChevronDown,
   Copy,
   Check,
+  Square,
 } from "lucide-react";
 import { extractQuotedSection, type TranscriptMessage } from "@/lib/transcript-stats";
 import { SessionOutcomeFollowUp } from "./session-outcome-followup";
@@ -41,6 +42,7 @@ interface NotesData {
   what_worked?: string;
   what_to_rethink?: string;
   actionItems?: string[];
+  keyHighlights?: string[];
   wordPattern?: WordPattern;
   beforeYouWalkIn?: string;
   next_time?: string;
@@ -209,6 +211,7 @@ export function NotesClient({
   initialSession: {
     transcript: unknown;
     ended_at: string | null;
+    duration_seconds?: number | null;
   } | null;
   initialOutcomeSubmitted: boolean;
 }) {
@@ -225,6 +228,7 @@ export function NotesClient({
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [transcriptExpanded, setTranscriptExpanded] = useState(false);
   const [restarting, setRestarting] = useState(false);
+  const [continuing, setContinuing] = useState(false);
   const [showOutcomeFollowUp, setShowOutcomeFollowUp] = useState(false);
   const [sessionStartError, setSessionStartError] = useState<string | null>(
     null
@@ -285,6 +289,46 @@ export function NotesClient({
       });
       setSessionStartError("Could not start another session right now.");
       setRestarting(false);
+    }
+  }
+
+  async function continueThisPractice() {
+    setContinuing(true);
+    setSessionStartError(null);
+    trackEvent("session_continue_clicked", { session_id: sessionId });
+    try {
+      const res = await fetch("/api/session/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "continue",
+          referenceSessionId: sessionId,
+          context: null,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.sessionId) {
+        setSessionStartError(
+          data?.message ||
+            data?.error ||
+            "Could not continue this practice right now."
+        );
+        setContinuing(false);
+        return;
+      }
+      sessionStorage.setItem(
+        `spar_session_${data.sessionId}`,
+        JSON.stringify({
+          systemPrompt: data.systemPrompt,
+          firstMessage: data.firstMessage,
+          maxDurationSeconds: data.maxDurationSeconds,
+          cap: data.cap,
+        })
+      );
+      router.push(`/session/${data.sessionId}`);
+    } catch {
+      setSessionStartError("Could not continue this practice right now.");
+      setContinuing(false);
     }
   }
 
@@ -373,6 +417,7 @@ export function NotesClient({
           const next = {
             transcript: d.session.transcript,
             ended_at: d.session.ended_at,
+            duration_seconds: d.session.duration_seconds ?? null,
           };
           setSession(next);
 
@@ -449,6 +494,19 @@ export function NotesClient({
       (x): x is string => typeof x === "string" && x.trim().length > 0
     );
   }, [notes]);
+
+  const keyHighlights = useMemo(() => {
+    if (!notes?.keyHighlights || !Array.isArray(notes.keyHighlights)) return [];
+    return notes.keyHighlights.filter(
+      (x): x is string => typeof x === "string" && x.trim().length > 0
+    );
+  }, [notes]);
+
+  const showYourWords = useMemo(() => {
+    const sec = session?.duration_seconds;
+    if (typeof sec !== "number" || !Number.isFinite(sec)) return false;
+    return sec > 180;
+  }, [session?.duration_seconds]);
 
   const wordPattern = useMemo((): WordPattern => {
     const wp = notes?.wordPattern;
@@ -626,82 +684,41 @@ export function NotesClient({
           </p>
         </section>
 
-        {/* SECTION 2 — YOUR MOMENTS */}
-        <section className="mt-12">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-            Your moments
-          </h2>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <div
-              className="rounded-lg border border-[#1E1E2E] p-4 pl-3"
+        {/* KEY HIGHLIGHTS */}
+        {keyHighlights.length > 0 ? (
+          <section className="mt-12 border-l-2 border-sky-500/50 pl-4">
+            <h2
+              className="font-mono text-[10px] uppercase tracking-[0.2em] text-slate-400"
               style={{
-                background: CARD,
-                borderLeftWidth: 3,
-                borderLeftColor: "#10B981",
+                fontFamily: "var(--font-ibm-mono), ui-monospace, monospace",
               }}
             >
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
-                Strongest
-              </p>
-              <p className="mt-2 text-[15px] font-medium leading-snug text-[#E2E8F0]">
-                {strongest.quote ? (
-                  <>
-                    &ldquo;{strongest.quote}&rdquo;
-                  </>
-                ) : (
-                  <span className="text-slate-500">—</span>
-                )}
-              </p>
-              {strongest.timestamp ? (
-                <span className="mt-2 inline-block rounded-full bg-slate-800/80 px-2 py-0.5 font-mono text-[10px] text-slate-400">
-                  {strongest.timestamp}
-                </span>
-              ) : null}
-              {strongest.why ? (
-                <p className="mt-3 text-xs leading-relaxed text-slate-400">
-                  {strongest.why}
-                </p>
-              ) : null}
-            </div>
-            <div
-              className="rounded-lg border border-[#1E1E2E] p-4 pl-3"
-              style={{
-                background: CARD,
-                borderLeftWidth: 3,
-                borderLeftColor: "#F59E0B",
-              }}
-            >
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-400">
-                Rethink
-              </p>
-              <p className="mt-2 text-[15px] font-medium leading-snug text-[#E2E8F0]">
-                {weakest.quote ? (
-                  <>
-                    &ldquo;{weakest.quote}&rdquo;
-                  </>
-                ) : (
-                  <span className="text-slate-500">—</span>
-                )}
-              </p>
-              {weakest.timestamp ? (
-                <span className="mt-2 inline-block rounded-full bg-slate-800/80 px-2 py-0.5 font-mono text-[10px] text-slate-400">
-                  {weakest.timestamp}
-                </span>
-              ) : null}
-              {weakest.why ? (
-                <p className="mt-3 text-xs leading-relaxed text-slate-400">
-                  {weakest.why}
-                </p>
-              ) : null}
-            </div>
-          </div>
-        </section>
+              Key highlights
+            </h2>
+            <ul className="mt-4 space-y-3">
+              {keyHighlights.map((line, i) => (
+                <li
+                  key={i}
+                  className="flex gap-2 text-[15px] leading-relaxed text-[#E2E8F0]"
+                >
+                  <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-sky-400/90" />
+                  <span>{line}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
 
-        {/* SECTION 3 — GAME PLAN */}
+        {/* YOUR ACTION ITEMS */}
         {actionItems.length > 0 ? (
           <section className="mt-12">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Your game plan
+            <h2
+              className="font-mono text-[10px] uppercase tracking-[0.2em] text-slate-400"
+              style={{
+                fontFamily: "var(--font-ibm-mono), ui-monospace, monospace",
+              }}
+            >
+              Your action items
             </h2>
             <ul className="mt-4 space-y-3">
               {actionItems.map((item, i) => (
@@ -713,21 +730,117 @@ export function NotesClient({
                   <span
                     className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-cyan-500/40 font-mono text-sm font-semibold text-cyan-400"
                     style={{
-                      fontFamily: "var(--font-ibm-mono), ui-monospace, monospace",
+                      fontFamily:
+                        "var(--font-ibm-mono), ui-monospace, monospace",
                     }}
                   >
                     {i + 1}
                   </span>
-                  <p className="flex-1 pt-1 text-sm leading-relaxed text-[#E2E8F0]">
+                  <p className="flex-1 pt-0.5 text-sm font-medium leading-relaxed text-[#E2E8F0]">
                     {item}
                   </p>
-                  <div
-                    className="mt-1 h-4 w-4 shrink-0 rounded border border-slate-600"
+                  <Square
+                    className="mt-1.5 h-4 w-4 shrink-0 text-slate-500"
+                    strokeWidth={1.5}
                     aria-hidden
                   />
                 </li>
               ))}
             </ul>
+          </section>
+        ) : null}
+
+        {/* YOUR WORDS — only if session was long enough */}
+        {showYourWords ? (
+          <section className="mt-12">
+            <h2
+              className="font-mono text-[10px] uppercase tracking-[0.2em] text-slate-400"
+              style={{
+                fontFamily: "var(--font-ibm-mono), ui-monospace, monospace",
+              }}
+            >
+              Your words
+            </h2>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div
+                className="rounded-lg border border-[#1E1E2E] p-4 pl-3"
+                style={{
+                  background: CARD,
+                  borderLeftWidth: 3,
+                  borderLeftColor: "#10B981",
+                }}
+              >
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
+                  Strongest
+                </p>
+                <p className="mt-2 text-[15px] font-medium leading-snug text-[#E2E8F0]">
+                  {strongest.quote ? (
+                    <>
+                      &ldquo;{strongest.quote}&rdquo;
+                    </>
+                  ) : (
+                    <span className="text-slate-500">—</span>
+                  )}
+                </p>
+                {strongest.timestamp ? (
+                  <span className="mt-2 inline-block rounded-full bg-slate-800/80 px-2 py-0.5 font-mono text-[10px] text-slate-400">
+                    {strongest.timestamp}
+                  </span>
+                ) : null}
+                {strongest.why ? (
+                  <p className="mt-3 text-xs leading-relaxed text-slate-400">
+                    {strongest.why}
+                  </p>
+                ) : null}
+              </div>
+              <div
+                className="rounded-lg border border-[#1E1E2E] p-4 pl-3"
+                style={{
+                  background: CARD,
+                  borderLeftWidth: 3,
+                  borderLeftColor: "#F59E0B",
+                }}
+              >
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-400">
+                  Rethink
+                </p>
+                <p className="mt-2 text-[15px] font-medium leading-snug text-[#E2E8F0]">
+                  {weakest.quote ? (
+                    <>
+                      &ldquo;{weakest.quote}&rdquo;
+                    </>
+                  ) : (
+                    <span className="text-slate-500">—</span>
+                  )}
+                </p>
+                {weakest.timestamp ? (
+                  <span className="mt-2 inline-block rounded-full bg-slate-800/80 px-2 py-0.5 font-mono text-[10px] text-slate-400">
+                    {weakest.timestamp}
+                  </span>
+                ) : null}
+                {weakest.why ? (
+                  <p className="mt-3 text-xs leading-relaxed text-slate-400">
+                    {weakest.why}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          </section>
+        ) : null}
+
+        {notes?.patternDetected?.trim() ? (
+          <section className="mt-12 border-l-2 border-violet-500/40 pl-4">
+            <h2
+              className="font-mono text-[10px] uppercase tracking-[0.2em] text-slate-400"
+              style={{
+                fontFamily: "var(--font-ibm-mono), ui-monospace, monospace",
+              }}
+            >
+              Something I noticed
+            </h2>
+            <p className="mt-3 text-sm leading-relaxed text-slate-300">
+              {notes.patternDetected}
+            </p>
           </section>
         ) : null}
 
@@ -891,6 +1004,14 @@ export function NotesClient({
               {restarting ? "Starting…" : "Practice again"}
             </button>
           )}
+          <button
+            type="button"
+            disabled={continuing}
+            onClick={() => void continueThisPractice()}
+            className="flex w-full items-center justify-center rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-5 py-3.5 text-sm font-semibold text-cyan-100 transition-colors hover:bg-cyan-500/20 disabled:opacity-50"
+          >
+            {continuing ? "Starting…" : "Continue this practice"}
+          </button>
           <button
             type="button"
             onClick={() => {

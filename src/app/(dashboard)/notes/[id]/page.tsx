@@ -27,7 +27,7 @@ export default async function NotesPage({
 
   const { data: session } = await supabase
     .from("sessions")
-    .select("transcript, ended_at, started_at, created_at")
+    .select("transcript, ended_at, started_at, created_at, duration_seconds")
     .eq("id", id)
     .single();
 
@@ -49,6 +49,7 @@ export default async function NotesPage({
           ? {
               transcript: session.transcript,
               ended_at: session.ended_at,
+              duration_seconds: session.duration_seconds,
             }
           : null
       }

@@ -96,6 +96,9 @@ export default function SessionPage() {
   const [callFeedback, setCallFeedback] = useState("");
   const [feedbackSaving, setFeedbackSaving] = useState(false);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
+  const [midContextDraft, setMidContextDraft] = useState("");
+  const [midContextSaving, setMidContextSaving] = useState(false);
+  const [midContextSaved, setMidContextSaved] = useState(false);
 
   useEffect(() => {
     if (!id) {
@@ -643,6 +646,26 @@ export default function SessionPage() {
     return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
   };
 
+  const saveMidSessionContext = useCallback(async () => {
+    if (!id || !midContextDraft.trim()) return;
+    setMidContextSaving(true);
+    setMidContextSaved(false);
+    try {
+      const res = await fetch(`/api/session/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ appendContext: midContextDraft.trim() }),
+      });
+      if (res.ok) {
+        setMidContextSaved(true);
+        setMidContextDraft("");
+        window.setTimeout(() => setMidContextSaved(false), 4000);
+      }
+    } finally {
+      setMidContextSaving(false);
+    }
+  }, [id, midContextDraft]);
+
   if (status === "error") {
     return (
       <div className="flex min-h-[80vh] flex-col items-center justify-center text-center">
@@ -917,6 +940,39 @@ export default function SessionPage() {
               {ending ? "Ending..." : "End session"}
             </button>
           </div>
+
+          <details className="fixed bottom-[7.25rem] left-1/2 z-40 w-[min(100vw-2rem,24rem)] -translate-x-1/2 rounded-lg border border-slate-700/60 bg-slate-950/90 px-3 py-2 shadow-lg backdrop-blur">
+            <summary className="cursor-pointer list-none text-center text-xs font-medium text-slate-400 [&::-webkit-details-marker]:hidden">
+              Add context
+            </summary>
+            <div className="mt-3 space-y-2 pb-1">
+              <textarea
+                value={midContextDraft}
+                onChange={(e) => setMidContextDraft(e.target.value)}
+                placeholder="Paste more for Kabir — saved for his notes after this call."
+                rows={4}
+                className="w-full resize-y rounded border border-slate-700/80 bg-slate-900/80 px-2 py-2 text-xs text-slate-200 placeholder:text-slate-600 outline-none focus:border-cyan-500/50"
+              />
+              <button
+                type="button"
+                disabled={midContextSaving || !midContextDraft.trim()}
+                onClick={() => void saveMidSessionContext()}
+                className="w-full rounded bg-slate-800 py-2 text-xs font-medium text-slate-200 transition-colors hover:bg-slate-700 disabled:opacity-40"
+              >
+                {midContextSaving ? "Saving…" : "Save for notes"}
+              </button>
+              {midContextSaved ? (
+                <p className="text-center text-[10px] text-emerald-500/90">
+                  Saved — Kabir will use this when he writes your notes.
+                </p>
+              ) : (
+                <p className="text-center text-[10px] leading-snug text-slate-500">
+                  Kabir can&apos;t change mid-call voice from here. This text is
+                  stored on the session for notes.
+                </p>
+              )}
+            </div>
+          </details>
 
           {(attachError || screenError) ? (
             <p className="fixed bottom-14 left-1/2 max-w-md -translate-x-1/2 px-4 text-center text-xs text-red-400">

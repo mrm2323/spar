@@ -89,6 +89,13 @@ async function ingestDocument(params: {
   });
 
   const text = await res.text().catch(() => "");
+  if (!res.ok) {
+    console.error(
+      "[Supermemory] ingest /documents failed:",
+      res.status,
+      text.slice(0, 500)
+    );
+  }
   return { ok: res.ok, status: res.status, body: text };
 }
 
@@ -161,6 +168,15 @@ ${kabirNotes}
   `.trim();
 
   const tag = userContainerTag(userId);
+  console.log(
+    "[Supermemory] saveSessionMemory start",
+    JSON.stringify({
+      userId,
+      sessionId,
+      containerTag: tag,
+      transcriptLength: transcript.length,
+    })
+  );
 
   try {
     const { ok, status, body } = await ingestDocument({
@@ -176,6 +192,11 @@ ${kabirNotes}
 
     if (!ok) {
       console.error("[Supermemory] session ingest failed:", status, body?.slice(0, 500));
+    } else {
+      console.log(
+        "[Supermemory] saveSessionMemory success",
+        JSON.stringify({ userId, sessionId, containerTag: tag, status })
+      );
     }
   } catch (e) {
     console.error("[Supermemory] saveSessionMemory error:", e);
@@ -296,6 +317,11 @@ export async function getDeepMemoryContext(userId: string): Promise<string> {
  * For “single broad question” behavior, see also `searchMemory`.
  */
 export async function getMemoryContext(userId: string): Promise<string> {
+  const tag = userContainerTag(userId);
+  console.log(
+    "[Supermemory] getMemoryContext",
+    JSON.stringify({ userId, containerTag: tag })
+  );
   return getDeepMemoryContext(userId);
 }
 
@@ -392,6 +418,14 @@ export function formatKabirNotesForMemory(notes: Record<string, unknown>): strin
 
   const take = s("kabirTake") || s("summary");
   if (take) parts.push(`Kabir's take: ${take}`);
+
+  const highlights = notes.keyHighlights;
+  if (Array.isArray(highlights) && highlights.length) {
+    const lines = highlights.filter((x) => typeof x === "string" && x.trim());
+    if (lines.length) {
+      parts.push(`Key highlights:\n${lines.join("\n")}`);
+    }
+  }
 
   const readiness = s("readiness");
   if (readiness) parts.push(`Readiness: ${readiness}`);

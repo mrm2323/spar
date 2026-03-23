@@ -22,8 +22,16 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { context, resumeSessionId, mode, referenceSessionId } = body as {
+    const {
+      context,
+      contextText,
+      resumeSessionId,
+      mode,
+      referenceSessionId,
+    } = body as {
       context?: string | null;
+      /** Pasted email, JD, etc. — also stored in session row via merged `context` */
+      contextText?: string | null;
       resumeSessionId?: string | null;
       mode?: "new" | "continue" | "restart";
       referenceSessionId?: string | null;
@@ -34,7 +42,13 @@ export async function POST(req: Request) {
       resumeSessionId ||
       (effectiveMode === "continue" ? referenceSessionId || null : null);
 
-    let effectiveContext = context || null;
+    const pastedBlock =
+      typeof contextText === "string" ? contextText.trim() : "";
+    const legacyContext =
+      typeof context === "string" ? context.trim() : "";
+    /** Stored on session row; prefer explicit contextText (paste + files from client), else legacy `context`. */
+    let effectiveContext: string | null =
+      pastedBlock || legacyContext || null;
 
     const supabase = createSupabaseAdmin();
 
@@ -99,14 +113,19 @@ export async function POST(req: Request) {
     }
 
     const memoryEnabled = await getMemoryPreference(userId);
-    const memoryText = memoryEnabled
-      ? await buildFullKabirContext(userId, supabase, {
-          resumeSessionId: effectiveResumeSessionId,
-        })
-      : "";
+    let memoryText = "";
+    if (memoryEnabled) {
+      console.log("Fetching memory for user:", userId);
+      memoryText = await buildFullKabirContext(userId, supabase, {
+        resumeSessionId: effectiveResumeSessionId,
+      });
+      console.log("Memory retrieved, length:", memoryText.length);
+      console.log("Memory content preview:", memoryText.substring(0, 200));
+    }
 
     const systemPrompt = buildKabirPrompt({
-      scenarioRaw: effectiveContext || undefined,
+      scenarioRaw: pastedBlock ? undefined : effectiveContext || undefined,
+      contextText: pastedBlock || undefined,
       channel: "web",
       durationSeconds: allowedSessionSeconds,
       userName: userFirstName,

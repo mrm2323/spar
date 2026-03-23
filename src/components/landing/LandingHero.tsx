@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { UserButton } from "@clerk/nextjs";
 import { EarlyAccessForm } from "@/app/early-access-form";
 import { HeroProductMockup } from "./HeroProductMockup";
 
@@ -44,16 +45,25 @@ export function LandingHero({
           SPAR
         </Link>
         <nav
-          className="flex min-h-[40px] items-center justify-end gap-2 sm:gap-3"
+          className="flex min-h-[40px] items-center justify-end gap-3 sm:gap-4"
           aria-label="Account"
         >
           {isSignedIn ? (
-            <Link
-              href="/dashboard/settings"
-              className="rounded-lg border border-white/14 bg-white/[0.05] px-3 py-2 text-sm font-medium text-slate-100 transition-colors hover:border-white/24 hover:bg-white/[0.08] sm:px-4"
-            >
-              Memory
-            </Link>
+            <>
+              <Link
+                href="/dashboard/settings"
+                className="text-xs font-medium uppercase tracking-wider text-slate-300 transition-colors hover:text-cyan-300"
+              >
+                Memory
+              </Link>
+              <UserButton
+                appearance={{
+                  elements: {
+                    avatarBox: "h-8 w-8",
+                  },
+                }}
+              />
+            </>
           ) : null}
         </nav>
       </header>
@@ -125,7 +135,7 @@ export function LandingHero({
                   href="/dashboard/settings"
                   className="inline-flex min-h-[48px] items-center rounded-xl border border-white/14 bg-white/[0.05] px-6 py-3 text-sm font-medium text-slate-100 transition-colors hover:border-white/24 hover:bg-white/[0.08]"
                 >
-                  Profile
+                  Memory settings
                 </Link>
               </div>
             ) : (

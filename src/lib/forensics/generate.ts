@@ -3,7 +3,6 @@ import { createSupabaseAdmin } from "@/lib/supabase/server";
 import {
   formatKabirNotesForMemory,
   hasSupermemory,
-  saveSessionMemory,
   searchMemory,
   upsertOverallProfileMemory,
 } from "@/lib/kabir/memory";
@@ -107,54 +106,69 @@ async function fetchTranscriptFromVapi(
   }
 }
 
-const NOTES_PROMPT = `You are Kabir writing notes to someone you just practiced a conversation with. You have their transcript below. Your notes must feel like they came from someone who was LISTENING.
+const NOTES_PROMPT = `You are Kabir writing notes to someone you just practiced a conversation with. You have their transcript below and may have CONTEXT they shared before the call (email, JD, message). Your notes must feel like a personal briefing from someone who READ everything, LISTENED, and is telling them exactly what to do next — not a report card.
 
 ABSOLUTE RULES:
 
-1. kabirTake must quote the user's EXACT words from the transcript (in quotes). Then explain what those words reveal.
+1. kabirTake — 2-3 sentences. Kabir's honest read on the situation from the conversation AND any context they shared. Quote their exact words from the transcript (in quotes). Be specific. Name subtext (e.g. what a CEO's phrasing actually signals).
 
-2. Never use generic advice. Tie everything to this specific conversation.
+2. When they shared context (email, job description, message), your notes must show you READ and UNDERSTOOD it. Extract key facts. Identify what the other person is asking for or signaling. Translate subtext into plain language.
 
-3. Never use coaching clichés: 'great step', 'remember the goal is', 'key shift', 'next move'.
+2b. When generating notes, use ALL context from the conversation including:
+- Details the user shared about the other person (name, personality, relationship)
+- Details about the user themselves (how they handle conflict, their fears)
+- The specific situation and what triggered it
+- What the user wants to achieve from the conversation
+Every note should demonstrate that you understood the FULL picture, not just the words they practiced.
+BAD: 'You were vague when describing the problem.'
+GOOD: 'You told me Sarah gets quiet when she is upset. But your opening line — telling her everything that is wrong — is going to trigger exactly that. She will shut down before you get to what you actually want. Start with what you want for the relationship, not what is broken.'
 
-4. Never suggest openings that start with "I'm excited about this opportunity."
+2c. Action items must reference specific details.
+BAD: 'Prepare what you want to say.'
+GOOD: 'Text Sarah today and say you want to talk this weekend. Don't ambush her after work. She needs time to not feel cornered.'
 
-5. If the session was short (under 3 minutes), do NOT apologize. Still fill wordPattern from what you heard; set timestamps like "near the start".
+2d. If the conversation was too short to gather meaningful context, say that honestly in readiness, e.g.:
+'I did not get to ask you enough about the situation. Next time give me 5 minutes before we start practicing. The more I know about who you are talking to and what is really going on, the better I can help.'
 
-6. readiness — One to two sentences. Kabir's honest gut read on whether this person is ready for the real conversation. This is NOT a score. It is a human judgment based on what he heard.
+3. keyHighlights — Up to 5 strings. Each ONE sentence. Specific facts or insights they might miss — names, dates, products, agendas. BAD: "The CEO wants to meet." GOOD: "Brendan mentioned a product launching in April and said you could get immediately involved — that is the real agenda, not the class visit."
 
-Rules for readiness (pick the situation that fits; paraphrase only if needed to sound natural, never add numbers or scales):
-- If they practiced well and showed improvement: 'You are ready. You said what you needed to say and you said it clearly. Go do it. Call me after.'
-- If they are partially ready: 'Your opening is solid. But when I pushed back you softened everything. Practice the pushback once more before you go in.'
-- If they are not ready: 'Honestly, not yet. You are still circling around the thing you need to say instead of saying it. Call me back. We will get there.'
-- If the session was too short to judge: 'I did not hear enough to tell you. Give me 5 minutes next time and I will give you a real answer.'
+4. actionItems — Up to 5 strings. SPECIFIC actions before their real conversation. Start each with a verb. Include names, dates, topics from the conversation or shared context. BAD: "Research the company." GOOD: "Read the pitch deck he attached. Find one thing in the investor Q&A you can ask about Tuesday."
 
-NEVER assign a number. NEVER say a percentage. NEVER use a scale. NEVER output a numeric readiness field.
-Just tell them the truth in plain language.
+5. whatWorked — { "quote": "exact strong user words", "why": "one sentence" }. whatToRethink — same shape for words that need work.
 
-7. strongestMoment and weakestMoment: quote must be exact user words; timestamp is a short phrase like "near the start" or "2 minutes in".
+6. beforeYouWalkIn — One specific opening line or approach for the real conversation from actual details they shared. Never generic. Never placeholders.
 
-8. actionItems: exactly 3 strings (or fewer if transcript is tiny). Direct instructions ("Do X"), not vague advice.
+7. readiness — One to two sentences. Kabir's honest gut read. NOT a score. Plain language only.
 
-9. wordPattern: counts come from the USER's lines only. When fillerCount > 0, topFillers MUST list the actual words they used (e.g. "um", "like"), most frequent first, max 5. When fillerCount is 0, topFillers is []. Same idea for hedgePhrases when hedgeCount > 0 — use exact phrases from their lines (e.g. "I guess", "maybe").
+Rules for readiness (pick what fits; paraphrase if needed; never numbers):
+- Ready: 'You are ready. You said what you needed to say and you said it clearly. Go do it. Call me after.'
+- Partial: 'Your opening is solid. But when I pushed back you softened everything. Practice the pushback once more before you go in.'
+- Not ready: 'Honestly, not yet. You are still circling around the thing you need to say instead of saying it. Call me back. We will get there.'
+- Too short: 'I did not hear enough to tell you. Give me 5 minutes next time and I will give you a real answer.'
 
-10. beforeYouWalkIn: one concrete sentence using their details. Never the generic excited-opportunity line.
+8. patternDetected — Optional string. Only if a communication pattern was clearly visible. Otherwise omit or empty string.
+
+9. wordPattern: USER lines only. fillerCount > 0 ⇒ topFillers = actual words. hedgeCount > 0 ⇒ hedgePhrases exact from their lines.
+
+10. Never use coaching clichés: 'great step', 'remember the goal is', 'key shift'. Never generic excited-opportunity openings.
 
 FORMAT YOUR RESPONSE AS JSON ONLY:
 {
   "kabirTake": "string",
+  "keyHighlights": ["string"],
+  "actionItems": ["string"],
+  "whatWorked": { "quote": "string", "why": "string" },
+  "whatToRethink": { "quote": "string", "why": "string" },
+  "beforeYouWalkIn": "string",
   "readiness": "string",
-  "strongestMoment": { "quote": "string", "timestamp": "string", "why": "string" },
-  "weakestMoment": { "quote": "string", "timestamp": "string", "why": "string" },
-  "actionItems": ["string", "string", "string"],
+  "patternDetected": "string",
   "wordPattern": {
     "fillerCount": 0,
-    "topFillers": ["um", "like"],
+    "topFillers": [],
     "hedgeCount": 0,
-    "hedgePhrases": ["I guess"],
+    "hedgePhrases": [],
     "apologyCount": 0
-  },
-  "beforeYouWalkIn": "string"
+  }
 }
 
 Output valid JSON only. No markdown.`;
@@ -210,9 +224,20 @@ function normalizeKabirNotesOutput(
   delete out.overall_score;
   delete out.scoreSuppressedReason;
 
+  const rawKh = out.keyHighlights;
+  out.keyHighlights = Array.isArray(rawKh)
+    ? rawKh
+        .filter((x): x is string => typeof x === "string" && Boolean(x.trim()))
+        .map((x) => x.trim())
+        .slice(0, 5)
+    : [];
+
   const legacyWw = out.whatWorked as Record<string, unknown> | undefined;
   const legacyWr = out.whatToRethink as Record<string, unknown> | undefined;
-  if (!out.strongestMoment) {
+
+  if (legacyWw && typeof legacyWw === "object" && !Array.isArray(legacyWw)) {
+    out.strongestMoment = asMoment(legacyWw, null);
+  } else if (!out.strongestMoment) {
     out.strongestMoment = asMoment(null, {
       quote: typeof legacyWw?.quote === "string" ? legacyWw.quote : undefined,
       why: typeof legacyWw?.why === "string" ? legacyWw.why : undefined,
@@ -224,7 +249,9 @@ function normalizeKabirNotesOutput(
     out.strongestMoment = m;
   }
 
-  if (!out.weakestMoment) {
+  if (legacyWr && typeof legacyWr === "object" && !Array.isArray(legacyWr)) {
+    out.weakestMoment = asMoment(legacyWr, null);
+  } else if (!out.weakestMoment) {
     out.weakestMoment = asMoment(null, {
       quote: typeof legacyWr?.quote === "string" ? legacyWr.quote : undefined,
       why: typeof legacyWr?.why === "string" ? legacyWr.why : undefined,
@@ -234,6 +261,12 @@ function normalizeKabirNotesOutput(
     if (!m.quote && legacyWr?.quote) m.quote = String(legacyWr.quote);
     if (!m.why && legacyWr?.why) m.why = String(legacyWr.why);
     out.weakestMoment = m;
+  }
+
+  if (typeof out.patternDetected === "string") {
+    out.patternDetected = out.patternDetected.trim();
+  } else {
+    out.patternDetected = "";
   }
 
   const rawItems = out.actionItems;
@@ -351,7 +384,9 @@ export async function generateKabirNotes(
         { role: "system", content: NOTES_PROMPT },
         {
           role: "user",
-          content: `Context they shared before the call: ${session.context || "none"}
+          content: `CONTEXT THEY SHARED BEFORE THE CALL (email, JD, message, paste — read carefully, extract facts for keyHighlights and actionItems):
+${session.context && String(session.context).trim() ? String(session.context).trim() : "none"}
+
 SESSION_DURATION_SECONDS: ${durationSec === null ? "unknown" : String(durationSec)}
 
 Full transcript of the practice session:
@@ -391,13 +426,6 @@ ${transcriptText}`,
     if (error) {
       console.error("[NOTES] DB insert error:", error.message, error.code);
     }
-
-    await saveSessionMemory(
-      userId,
-      sessionId,
-      transcriptText,
-      formatKabirNotesForMemory(notes as Record<string, unknown>)
-    );
 
     await generateAndUpsertOverallProfile(
       userId,

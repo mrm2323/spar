@@ -69,10 +69,11 @@ export async function PATCH(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { vapiCallId } = (await req.json()) as { vapiCallId: string };
-  if (!vapiCallId) {
-    return NextResponse.json({ error: "Missing vapiCallId" }, { status: 400 });
-  }
+  const body = (await req.json()) as {
+    vapiCallId?: string;
+    /** Appended to session.context for notes generation (mid-session paste; not injected into live Vapi). */
+    appendContext?: string;
+  };
 
   const supabase = createSupabaseAdmin();
   const ok = await sessionBelongsToUser(supabase, sessionId, userId);
@@ -80,10 +81,35 @@ export async function PATCH(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  await supabase
-    .from("sessions")
-    .update({ vapi_call_id: vapiCallId })
-    .eq("id", sessionId);
+  if (body.appendContext?.trim()) {
+    const { data: row } = await supabase
+      .from("sessions")
+      .select("context")
+      .eq("id", sessionId)
+      .maybeSingle();
+
+    const prev = typeof row?.context === "string" ? row.context.trim() : "";
+    const add = body.appendContext.trim();
+    const next = prev
+      ? `${prev}\n\n--- Additional context (during session) ---\n${add}`
+      : add;
+
+    await supabase.from("sessions").update({ context: next }).eq("id", sessionId);
+  }
+
+  if (body.vapiCallId) {
+    await supabase
+      .from("sessions")
+      .update({ vapi_call_id: body.vapiCallId })
+      .eq("id", sessionId);
+  }
+
+  if (!body.vapiCallId && !body.appendContext?.trim()) {
+    return NextResponse.json(
+      { error: "Provide vapiCallId and/or appendContext" },
+      { status: 400 }
+    );
+  }
 
   return NextResponse.json({ success: true });
 }

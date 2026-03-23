@@ -2,7 +2,12 @@ import { after } from "next/server";
 import { clerkClient } from "@clerk/nextjs/server";
 import { createSupabaseAdmin } from "@/lib/supabase/server";
 import { generateKabirNotes } from "@/lib/forensics/generate";
-import { buildFullKabirContext } from "@/lib/kabir/memory";
+import {
+  buildFullKabirContext,
+  formatKabirNotesForMemory,
+  hasSupermemory,
+  saveSessionMemory,
+} from "@/lib/kabir/memory";
 import { buildKabirPrompt } from "@/lib/kabir/system-prompt";
 import memoryService from "@/services/memory";
 import { getMemoryPreference } from "@/lib/memory/preferences";
@@ -311,7 +316,38 @@ export async function POST(req: Request) {
               );
             }
 
-            await generateKabirNotes(session.id, canonicalUserId);
+            const generated = await generateKabirNotes(session.id, canonicalUserId);
+
+            const transcriptText =
+              typeof transcript === "string" ? transcript : JSON.stringify(transcript);
+            const kabirNotesText = generated?.notes
+              ? formatKabirNotesForMemory(generated.notes)
+              : "Kabir notes were unavailable at memory-save time.";
+
+            if (!canonicalUserId) {
+              console.error("Failed to save memory: missing userId");
+            } else {
+              console.log("Saving memory for user:", canonicalUserId);
+              console.log("Transcript length:", transcriptText.length);
+              console.log(
+                "SUPERMEMORY_API_KEY configured:",
+                hasSupermemory()
+              );
+              try {
+                await saveSessionMemory(
+                  canonicalUserId,
+                  session.id,
+                  transcriptText,
+                  kabirNotesText
+                );
+                console.log(
+                  "Memory saved successfully for user:",
+                  canonicalUserId
+                );
+              } catch (error) {
+                console.error("Failed to save memory:", error);
+              }
+            }
 
             const extracted = toMemoryMessages(transcript);
             const memoryEnabled = await getMemoryPreference(canonicalUserId);
