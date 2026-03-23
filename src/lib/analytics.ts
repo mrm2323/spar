@@ -21,6 +21,7 @@ let initialized = false;
 let replayAttached = false;
 let currentUserId: string | null = null;
 let hasLoggedDisabledReason = false;
+let replayPluginInstance: any = null;
 
 function firstPartyUrl(pathname: string): string {
   if (typeof window === "undefined") return "";
@@ -115,6 +116,7 @@ export function initAnalytics(userId?: string | null): void {
         ? { configServerUrl: replayConfigServerUrl }
         : {}),
     });
+    replayPluginInstance = replay;
     amplitude.add(replay);
     replayAttached = true;
   }
@@ -183,15 +185,25 @@ export function startPracticeReplaySession(
 ): void {
   if (!canSendAnalytics()) return;
 
-  // Flush pending events from previous session before rotating the session ID
+  // Preserve current user ID before reset
+  const preservedUserId = currentUserId;
+
+  // Flush any pending data from the previous session
   amplitude.flush();
 
-  // Force a new session ID for the replay plugin
+  // Fully reset the analytics instance to force the replay plugin to start fresh
+  amplitude.reset();
+
+  // Restore the user context and establish a fresh session
+  if (preservedUserId) {
+    amplitude.setUserId(preservedUserId);
+  }
+
+  // Force a new session ID
   const newSessionId = Date.now();
   amplitude.setSessionId(newSessionId);
 
   // Track the start of this new practice session
-  // This event will be associated with the new session ID
   amplitude.track("practice_replay_session_started", {
     new_session_id: newSessionId,
     ...metadata,
