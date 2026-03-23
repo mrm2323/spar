@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { extractQuotedSection, type TranscriptMessage } from "@/lib/transcript-stats";
 import { SessionOutcomeFollowUp } from "./session-outcome-followup";
-import { trackEvent } from "@/lib/analytics";
+import { startPracticeReplaySession, trackEvent } from "@/lib/analytics";
 
 const TRANSCRIPT_PREVIEW_MESSAGES = 8;
 const CARD = "rgba(11, 29, 62, 0.55)";
@@ -265,6 +265,11 @@ export function NotesClient({
         setRestarting(false);
         return;
       }
+      startPracticeReplaySession({
+        source: "notes_restart",
+        previous_session_id: sessionId,
+        session_id: data.sessionId,
+      });
       trackEvent("session_restart_succeeded", {
         previous_session_id: sessionId,
         session_id: data.sessionId,
@@ -316,6 +321,11 @@ export function NotesClient({
         setContinuing(false);
         return;
       }
+      startPracticeReplaySession({
+        source: "notes_continue",
+        previous_session_id: sessionId,
+        session_id: data.sessionId,
+      });
       sessionStorage.setItem(
         `spar_session_${data.sessionId}`,
         JSON.stringify({

@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
-import { trackEvent } from "@/lib/analytics";
+import { startPracticeReplaySession, trackEvent } from "@/lib/analytics";
 
 interface PastSession {
   id: string;
@@ -105,6 +105,10 @@ function DashboardInner() {
         };
         }) => {
           if (res.ok && data.sessionId && data.systemPrompt) {
+            startPracticeReplaySession({
+              source: "dashboard_resume",
+              session_id: data.sessionId,
+            });
             sessionStorage.setItem(
               `spar_session_${data.sessionId}`,
               JSON.stringify({
@@ -277,6 +281,10 @@ function DashboardInner() {
         setLoading(false);
         return;
       }
+      startPracticeReplaySession({
+        source: "dashboard_start",
+        session_id: data.sessionId,
+      });
       trackEvent("session_start_succeeded", {
         source: "dashboard",
         session_id: data.sessionId,

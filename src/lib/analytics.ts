@@ -177,3 +177,12 @@ export function trackEvent(
   if (!canSendAnalytics()) return;
   amplitude.track(eventName, eventProperties);
 }
+
+export function startPracticeReplaySession(
+  metadata?: Record<string, unknown>
+): void {
+  if (!canSendAnalytics()) return;
+
+  amplitude.setSessionId(Date.now());
+  amplitude.track("practice_replay_session_started", metadata);
+}
