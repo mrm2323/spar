@@ -92,7 +92,13 @@ export function getAnalyticsClientStatus(): {
 }
 
 export function initAnalytics(userId?: string | null): void {
-  if (!canSendAnalytics() || initialized) return;
+  if (!canSendAnalytics() || initialized) {
+    console.log("[analytics] Init skipped", {
+      canSend: canSendAnalytics(),
+      alreadyInit: initialized,
+    });
+    return;
+  }
 
   const eventsServerUrl = AMPLITUDE_EVENTS_SERVER_URL || firstPartyUrl("/api/amplitude/events");
   const replayTrackServerUrl =
@@ -100,41 +106,62 @@ export function initAnalytics(userId?: string | null): void {
   const replayConfigServerUrl =
     AMPLITUDE_REPLAY_CONFIG_SERVER_URL || firstPartyUrl("/api/amplitude/replay-config");
 
-  if (!replayAttached) {
-    // Attach replay plugin to the default analytics instance before init.
-    // The plugin will maintain its own session tracking across all main Analytics sessions.
-    const replay = sessionReplayPlugin({
-      sampleRate: 1,
-      // Helps replay/session linkage when users authenticate in the same tab.
-      forceSessionTracking: true,
-      // Mobile browsers occasionally miss history patch hooks.
-      enableUrlChangePolling: true,
-      ...(replayTrackServerUrl
-        ? { trackServerUrl: replayTrackServerUrl }
-        : {}),
-      ...(replayConfigServerUrl
-        ? { configServerUrl: replayConfigServerUrl }
-        : {}),
-    });
-    amplitude.add(replay);
-    replayAttached = true;
-  }
-
-  amplitude.init(AMPLITUDE_API_KEY, userId ?? undefined, {
-    autocapture: true,
-    defaultTracking: {
-      pageViews: false,
-      sessions: true,
-      formInteractions: true,
-      fileDownloads: true,
-    },
-    ...(eventsServerUrl ? { serverUrl: eventsServerUrl } : {}),
+  console.log("[analytics] Initializing with URLs", {
+    userId,
+    eventsServerUrl,
+    replayTrackServerUrl,
+    replayConfigServerUrl,
   });
 
-  initialized = true;
-  currentUserId = userId ?? null;
+  if (!replayAttached) {
+    try {
+      // Attach replay plugin to the default analytics instance before init.
+      // The plugin will maintain its own session tracking across all main Analytics sessions.
+      const replay = sessionReplayPlugin({
+        sampleRate: 1,
+        // Helps replay/session linkage when users authenticate in the same tab.
+        forceSessionTracking: true,
+        // Mobile browsers occasionally miss history patch hooks.
+        enableUrlChangePolling: true,
+        ...(replayTrackServerUrl
+          ? { trackServerUrl: replayTrackServerUrl }
+          : {}),
+        ...(replayConfigServerUrl
+          ? { configServerUrl: replayConfigServerUrl }
+          : {}),
+      });
+      amplitude.add(replay);
+      replayAttached = true;
+      console.log("[analytics] Replay plugin attached successfully");
+    } catch (e) {
+      console.error("[analytics] Failed to attach replay plugin", e);
+      replayAttached = false;
+    }
+  }
 
-  console.log("[analytics] Initialized", { userId, initialized: true });
+  try {
+    amplitude.init(AMPLITUDE_API_KEY, userId ?? undefined, {
+      autocapture: true,
+      defaultTracking: {
+        pageViews: false,
+        sessions: true,
+        formInteractions: true,
+        fileDownloads: true,
+      },
+      ...(eventsServerUrl ? { serverUrl: eventsServerUrl } : {}),
+    });
+
+    initialized = true;
+    currentUserId = userId ?? null;
+
+    console.log("[analytics] Initialized successfully", {
+      userId,
+      replayAttached,
+    });
+  } catch (e) {
+    console.error("[analytics] Failed to initialize Amplitude", e);
+    initialized = false;
+  }
 }
 
 export function setAnalyticsUser(userId: string | null | undefined): void {
@@ -189,9 +216,9 @@ function clearReplaySessionId(): void {
   if (typeof window === "undefined") return;
 
   try {
-    // Only clear the session ID that the replay plugin uses
-    // This forces it to generate a new one without breaking other state
+    const existing = localStorage.getItem("sr_session_id");
     localStorage.removeItem("sr_session_id");
+    console.log("[analytics] Cleared replay session ID", { existing });
   } catch (e) {
     // localStorage might be blocked, that's ok
     console.debug("[analytics] Could not clear replay session ID", e);
@@ -201,39 +228,53 @@ function clearReplaySessionId(): void {
 export function startPracticeReplaySession(
   metadata?: Record<string, unknown>
 ): void {
-  if (!canSendAnalytics()) return;
+  if (!canSendAnalytics()) {
+    console.warn("[analytics] Cannot send analytics, skipping session restart");
+    return;
+  }
 
-  console.log("[analytics] Starting new practice replay session", {
+  console.log("[analytics] === Starting new practice replay session ===", {
     current_user: currentUserId,
+    replay_attached: replayAttached,
+    initialized,
     metadata,
   });
 
-  // Step 1: Ensure any pending events are sent
-  amplitude.flush();
-
-  // Step 2: Clear ONLY the replay plugin's session ID from localStorage
-  // This minimal approach forces a fresh replay session without breaking initialization
-  clearReplaySessionId();
-
-  // Step 3: Set a new Amplitude session ID
-  const newSessionId = Date.now();
-  amplitude.setSessionId(newSessionId);
-
-  // Step 4: Queue the event tracking to happen after state settles
-  queueMicrotask(() => {
-    amplitude.track("practice_replay_session_started", {
-      new_session_id: newSessionId,
-      timestamp_ms: newSessionId,
-      ...metadata,
-    });
-    
-    // Ensure it's sent immediately
+  try {
+    // Step 1: Ensure any pending events are sent
+    console.log("[analytics] Flushing pending events...");
     amplitude.flush();
 
-    console.log("[analytics] New practice replay session started", {
-      session_id: newSessionId,
-      user_id: currentUserId,
-      metadata,
+    // Step 2: Clear ONLY the replay plugin's session ID from localStorage
+    // This minimal approach forces a fresh replay session without breaking initialization
+    console.log("[analytics] Clearing replay session ID from storage...");
+    clearReplaySessionId();
+
+    // Step 3: Set a new Amplitude session ID
+    const newSessionId = Date.now();
+    console.log("[analytics] Setting new session ID:", newSessionId);
+    amplitude.setSessionId(newSessionId);
+
+    // Step 4: Queue the event tracking to happen after state settles
+    queueMicrotask(() => {
+      console.log("[analytics] Tracking practice session start event...");
+      amplitude.track("practice_replay_session_started", {
+        new_session_id: newSessionId,
+        timestamp_ms: newSessionId,
+        ...metadata,
+      });
+
+      // Ensure it's sent immediately
+      console.log("[analytics] Flushing session start event...");
+      amplitude.flush();
+
+      console.log("[analytics] === New practice replay session started ===", {
+        session_id: newSessionId,
+        user_id: currentUserId,
+        metadata,
+      });
     });
-  });
+  } catch (e) {
+    console.error("[analytics] Error in startPracticeReplaySession", e);
+  }
 }
