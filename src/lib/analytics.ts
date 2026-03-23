@@ -183,6 +183,17 @@ export function startPracticeReplaySession(
 ): void {
   if (!canSendAnalytics()) return;
 
-  amplitude.setSessionId(Date.now());
-  amplitude.track("practice_replay_session_started", metadata);
+  // Flush pending events from previous session before rotating the session ID
+  amplitude.flush();
+
+  // Force a new session ID for the replay plugin
+  const newSessionId = Date.now();
+  amplitude.setSessionId(newSessionId);
+
+  // Track the start of this new practice session
+  // This event will be associated with the new session ID
+  amplitude.track("practice_replay_session_started", {
+    new_session_id: newSessionId,
+    ...metadata,
+  });
 }
