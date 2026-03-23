@@ -10,12 +10,26 @@ export function AmplitudeBootstrap() {
   const searchParams = useSearchParams();
   const { user, isLoaded } = useUser();
   const lastPathRef = useRef<string>("");
+  const initSignalRef = useRef<boolean>(false);
 
+  // Initialize analytics on app load with user from Clerk
   useEffect(() => {
     if (!isLoaded) return;
 
-    initAnalytics(user?.id ?? null);
-    setAnalyticsUser(user?.id ?? null);
+    // Ensure we only initialize once per page load
+    if (initSignalRef.current) return;
+    initSignalRef.current = true;
+
+    const userId = user?.id ?? null;
+    console.log("[bootstrap] Initializing analytics", { userId });
+
+    // Initialize main analytics system (attaches replay plugin once)
+    initAnalytics(userId);
+
+    // Set/update the current user in analytics
+    setAnalyticsUser(userId);
+
+    // Identify user by email domain for product analytics
     if (user?.primaryEmailAddress?.emailAddress) {
       identifyUser({
         email_domain: user.primaryEmailAddress.emailAddress.split("@")[1] || "unknown",
@@ -23,6 +37,7 @@ export function AmplitudeBootstrap() {
     }
   }, [isLoaded, user?.id, user?.primaryEmailAddress?.emailAddress]);
 
+  // Track connectivity state (online/offline transitions, network quality)
   useEffect(() => {
     if (!isLoaded || typeof window === "undefined") return;
 
@@ -59,7 +74,10 @@ export function AmplitudeBootstrap() {
     const onOffline = () => emitSnapshot("offline");
     const onConnectionChange = () => emitSnapshot("connection_change");
 
+    // Emit initial connectivity snapshot
     emitSnapshot("init");
+
+    // Listen for connectivity changes
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
     nav.connection?.addEventListener?.("change", onConnectionChange);
@@ -71,6 +89,7 @@ export function AmplitudeBootstrap() {
     };
   }, [isLoaded]);
 
+  // Track page views
   useEffect(() => {
     const pathWithQuery = `${pathname || ""}${searchParams?.toString() ? `?${searchParams.toString()}` : ""}`;
     if (!pathWithQuery || lastPathRef.current === pathWithQuery) return;
