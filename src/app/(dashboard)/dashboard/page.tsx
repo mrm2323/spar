@@ -12,7 +12,6 @@ import {
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import { trackEvent } from "@/lib/analytics";
-import { AnalyticsHealthCard } from "@/components/analytics/AnalyticsHealthCard";
 
 interface PastSession {
   id: string;
@@ -525,9 +524,6 @@ function DashboardInner() {
           </div>
         </div>
       )}
-
-      <AnalyticsHealthCard />
-
     </div>
   );
 }
