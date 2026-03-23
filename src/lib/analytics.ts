@@ -182,52 +182,19 @@ export function trackEvent(
 }
 
 /**
- * Forcefully clears all replay plugin session state from storage.
- * The replay plugin uses localStorage with keys like:
- * - amplitude_unsent_identify, amplitude_unsent_events (main SDK)
- * - sr_session_id, sr_session_sequence (replay plugin)
- * And IndexedDB databases for event queuing.
+ * Clears only the replay plugin's session ID from storage.
+ * This is the minimal change needed to force a new replay session.
  */
-function clearReplaySessionState(): void {
+function clearReplaySessionId(): void {
   if (typeof window === "undefined") return;
-  
-  // Clear known Amplitude/Replay session keys from localStorage
-  const keysToRemove = [
-    "sr_session_id",        // Replay session ID
-    "sr_session_sequence",  // Replay event sequence
-    "sr_session_start",     // Replay session start time
-    "amplitude_session_id", // Main session ID in storage
-    "amplitude_last_session_id", // Last recorded session
-  ];
 
   try {
-    for (const key of keysToRemove) {
-      localStorage.removeItem(key);
-    }
+    // Only clear the session ID that the replay plugin uses
+    // This forces it to generate a new one without breaking other state
+    localStorage.removeItem("sr_session_id");
   } catch (e) {
-    // localStorage might be blocked, continue anyway
-    console.debug("[analytics] localStorage access blocked or unavailable", e);
-  }
-
-  // Clear IndexedDB databases that Amplitude/Replay might use
-  // This ensures no stale session data persists
-  try {
-    const dbs = [
-      "amplitudeDB",
-      "amplitude",
-      "amplitude_events",
-      "amplitude_identify",
-    ];
-    
-    for (const dbName of dbs) {
-      const req = indexedDB.deleteDatabase(dbName);
-      req.onerror = () => {
-        console.debug(`[analytics] Could not delete IndexedDB: ${dbName}`);
-      };
-    }
-  } catch (e) {
-    // IndexedDB might be unavailable, continue anyway
-    console.debug("[analytics] IndexedDB access blocked or unavailable", e);
+    // localStorage might be blocked, that's ok
+    console.debug("[analytics] Could not clear replay session ID", e);
   }
 }
 
@@ -241,31 +208,26 @@ export function startPracticeReplaySession(
     metadata,
   });
 
-  // Step 1: Flush any pending events/tracking from the previous session
-  // This is critical - must complete before we change session state
+  // Step 1: Ensure any pending events are sent
   amplitude.flush();
 
-  // Step 2: Clear ALL replay plugin session state from storage
-  // This forces the plugin to recognize this as a completely new session
-  clearReplaySessionState();
+  // Step 2: Clear ONLY the replay plugin's session ID from localStorage
+  // This minimal approach forces a fresh replay session without breaking initialization
+  clearReplaySessionId();
 
-  // Step 3: Generate and set a completely new session ID
-  // Using Date.now() ensures uniqueness across all browser tabs/sessions
+  // Step 3: Set a new Amplitude session ID
   const newSessionId = Date.now();
   amplitude.setSessionId(newSessionId);
 
-  // Step 4: Force a small async delay to ensure storage operations complete
-  // and the SDK has processed the new session ID before tracking
+  // Step 4: Queue the event tracking to happen after state settles
   queueMicrotask(() => {
-    // Step 5: Track the session start in the context of the new session
-    // This event will be associated with the new session ID and new replay session
     amplitude.track("practice_replay_session_started", {
       new_session_id: newSessionId,
       timestamp_ms: newSessionId,
       ...metadata,
     });
-
-    // Step 6: Flush again to ensure the session start event goes out
+    
+    // Ensure it's sent immediately
     amplitude.flush();
 
     console.log("[analytics] New practice replay session started", {
