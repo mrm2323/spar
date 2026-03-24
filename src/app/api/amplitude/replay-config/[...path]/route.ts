@@ -118,8 +118,10 @@ async function forward(
       headers: {
         "content-type": upstream.headers.get("content-type") || "application/json",
         "cache-control": "no-store",
+        "x-replay-config-requested-path": requestedPath,
         "x-replay-config-forwarded-path": forwardedPath,
         "x-replay-config-has-api-key": query.get("api_key") ? "yes" : "no",
+        "x-replay-config-api-key-from-path": mapped.apiKeyFromPath ? "yes" : "no",
       },
     });
   } catch (error) {
