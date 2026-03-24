@@ -10,13 +10,20 @@ function joinUrl(base: string, path: string, search: string): string {
   return `${normalizedBase}${normalizedPath}${search}`;
 }
 
-function mapReplayConfigPath(path: string): string {
+function mapReplayConfigPath(path: string): { path: string; apiKeyFromPath?: string } {
   // The web SDK can request replay config via /api/* style paths,
   // but Amplitude's replay config host serves this at /config.
-  if (path === "/api" || path.startsWith("/api/")) return "/config";
-  if (path === "/api/v1/config") return "/config";
-  if (path.startsWith("/api/v1/config/")) return path.replace("/api/v1/config", "/config");
-  return path;
+  const keyInPath = path.match(/^\/api\/([^/]+)~\/?$/);
+  if (keyInPath?.[1]) {
+    return { path: "/config", apiKeyFromPath: keyInPath[1] };
+  }
+
+  if (path === "/api" || path.startsWith("/api/")) return { path: "/config" };
+  if (path === "/api/v1/config") return { path: "/config" };
+  if (path.startsWith("/api/v1/config/")) {
+    return { path: path.replace("/api/v1/config", "/config") };
+  }
+  return { path };
 }
 
 async function forward(
@@ -25,11 +32,17 @@ async function forward(
 ): Promise<NextResponse> {
   try {
     const requestedPath = pathSegments.length > 0 ? `/${pathSegments.join("/")}` : "/config";
-    const forwardedPath = mapReplayConfigPath(requestedPath);
+    const mapped = mapReplayConfigPath(requestedPath);
+    const forwardedPath = mapped.path;
+    const query = new URLSearchParams(request.nextUrl.searchParams);
+    if (mapped.apiKeyFromPath && !query.get("api_key")) {
+      query.set("api_key", mapped.apiKeyFromPath);
+    }
+    const search = query.toString() ? `?${query.toString()}` : "";
     const targetUrl = joinUrl(
       REPLAY_CONFIG_UPSTREAM_BASE_URL,
       forwardedPath,
-      request.nextUrl.search
+      search
     );
 
     const body = request.method === "POST" ? await request.text() : undefined;
