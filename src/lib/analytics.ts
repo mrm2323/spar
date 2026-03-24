@@ -21,7 +21,7 @@ let initialized = false;
 let replayAttached = false;
 let currentUserId: string | null = null;
 let hasLoggedDisabledReason = false;
-let replayPluginInstance: any = null;
+let lastPracticeReplayKey: string | null = null;
 
 function firstPartyUrl(pathname: string): string {
   if (typeof window === "undefined") return "";
@@ -131,7 +131,6 @@ export function initAnalytics(userId?: string | null): void {
           ? { configServerUrl: replayConfigServerUrl }
           : {}),
       });
-      replayPluginInstance = replay;
       amplitude.add(replay);
       replayAttached = true;
       console.log("[analytics] Replay plugin attached successfully");
@@ -218,6 +217,17 @@ export function startPracticeReplaySession(
     return;
   }
 
+  const metadataSessionId =
+    typeof metadata?.session_id === "string" ? metadata.session_id : null;
+
+  // Avoid duplicate replay rotations for the same practice session.
+  if (metadataSessionId && metadataSessionId === lastPracticeReplayKey) {
+    console.log("[analytics] Skipping duplicate replay rotation", {
+      session_id: metadataSessionId,
+    });
+    return;
+  }
+
   console.log("[analytics] === Starting new practice replay session ===", {
     current_user: currentUserId,
     replay_attached: replayAttached,
@@ -226,47 +236,17 @@ export function startPracticeReplaySession(
   });
 
   try {
-    console.log("[analytics] === NEW PRACTICE SESSION ===", {
-      user: currentUserId,
-      hasPlugin: !!replayPluginInstance,
-      metadata,
-    });
-
-    // CRITICAL: Reset the replay plugin's session so it records a new replay
-    if (replayPluginInstance) {
-      console.log("[analytics] Plugin instance found, checking for reset methods...");
-      const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(replayPluginInstance) || {});
-      console.log("[analytics] Available plugin methods:", methods);
-
-      // Try to call known reset methods
-      const resetMethods = ["resetSession", "startNewReplaySession", "newSession", "reset"];
-      for (const method of resetMethods) {
-        if (typeof replayPluginInstance[method] === "function") {
-          try {
-            console.log(`[analytics] Calling plugin.${method}()`);
-            replayPluginInstance[method]();
-            console.log(`[analytics] ✓ ${method}() succeeded`);
-            break;
-          } catch (err: unknown) {
-            const errMsg = err instanceof Error ? err.message : String(err);
-            console.warn(`[analytics] ${method}() failed:`, errMsg);
-          }
-        }
-      }
-    } else {
-      console.warn("[analytics] ❌ No plugin instance - recordings won't start!");
-    }
-
-    // Flush old session
+    // Flush old session events before rotating.
     amplitude.flush();
 
-    // Set new Amplitude session ID
+    // Start a new Amplitude session boundary used by Replay.
     const newSessionId = Date.now();
     amplitude.setSessionId(newSessionId);
     console.log("[analytics] Session ID updated:", newSessionId);
 
-    // Track event
+    // Track a deterministic marker that links practice session ID to replay session.
     amplitude.track("practice_session_started", {
+      practice_session_id: metadataSessionId,
       session_id: newSessionId,
       timestamp: Date.now(),
       ...metadata,
@@ -279,6 +259,10 @@ export function startPracticeReplaySession(
       session_id: newSessionId,
       user_id: currentUserId,
     });
+
+    if (metadataSessionId) {
+      lastPracticeReplayKey = metadataSessionId;
+    }
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err);
     console.error("[analytics] ERROR:", errMsg);

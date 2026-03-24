@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Paperclip, Loader2, Check, Monitor, Square, Star } from "lucide-react";
 import Vapi from "@vapi-ai/web";
-import { trackEvent } from "@/lib/analytics";
+import { startPracticeReplaySession, trackEvent } from "@/lib/analytics";
 
 type SessionStatus =
   | "trust"
@@ -99,6 +99,16 @@ export default function SessionPage() {
   const [midContextDraft, setMidContextDraft] = useState("");
   const [midContextSaving, setMidContextSaving] = useState(false);
   const [midContextSaved, setMidContextSaved] = useState(false);
+  const replayStartSentRef = useRef(false);
+
+  useEffect(() => {
+    if (!id || replayStartSentRef.current) return;
+    replayStartSentRef.current = true;
+    startPracticeReplaySession({
+      source: "session_page_mount",
+      session_id: id,
+    });
+  }, [id]);
 
   useEffect(() => {
     if (!id) {
