@@ -10,12 +10,30 @@ function joinUrl(base: string, path: string, search: string): string {
   return `${normalizedBase}${normalizedPath}${search}`;
 }
 
+function extractApiKeyFromPath(path: string): string | undefined {
+  const decoded = decodeURIComponent(path);
+
+  // Common SDK shape: /api/<apiKey>~
+  const apiKeyTildeMatch = decoded.match(/^\/api\/([^/]+?)~(?:.*)?$/);
+  if (apiKeyTildeMatch?.[1]) {
+    return apiKeyTildeMatch[1];
+  }
+
+  // Fallback: detect a 32-char hex key anywhere in path.
+  const hexKeyMatch = decoded.match(/([a-f0-9]{32})/i);
+  if (hexKeyMatch?.[1]) {
+    return hexKeyMatch[1];
+  }
+
+  return undefined;
+}
+
 function mapReplayConfigPath(path: string): { path: string; apiKeyFromPath?: string } {
   // The web SDK can request replay config via /api/* style paths,
   // but Amplitude's replay config host serves this at /config.
-  const keyInPath = path.match(/^\/api\/([^/]+?)(?:~|%7E|%7e)\/?$/);
-  if (keyInPath?.[1]) {
-    return { path: "/config", apiKeyFromPath: decodeURIComponent(keyInPath[1]) };
+  const apiKeyFromPath = extractApiKeyFromPath(path);
+  if (apiKeyFromPath) {
+    return { path: "/config", apiKeyFromPath };
   }
 
   if (path === "/api" || path.startsWith("/api/")) return { path: "/config" };
@@ -58,6 +76,42 @@ async function forward(
     });
 
     const responseBody = await upstream.text();
+
+    // Safety net: if upstream says API key is missing, retry once by extracting
+    // from path with a broad regex (some SDK variants embed it oddly).
+    if (
+      upstream.status === 403 &&
+      responseBody.includes("Missing API key") &&
+      !query.get("api_key")
+    ) {
+      const recoveredKey = extractApiKeyFromPath(requestedPath);
+      if (recoveredKey) {
+        const retryQuery = new URLSearchParams(query);
+        retryQuery.set("api_key", recoveredKey);
+        const retrySearch = retryQuery.toString() ? `?${retryQuery.toString()}` : "";
+        const retryUrl = joinUrl(REPLAY_CONFIG_UPSTREAM_BASE_URL, "/config", retrySearch);
+
+        const retryUpstream = await fetch(retryUrl, {
+          method: request.method,
+          headers: {
+            ...(contentType ? { "content-type": contentType } : {}),
+          },
+          ...(body ? { body } : {}),
+          cache: "no-store",
+        });
+
+        const retryBody = await retryUpstream.text();
+        return new NextResponse(retryBody, {
+          status: retryUpstream.status,
+          headers: {
+            "content-type": retryUpstream.headers.get("content-type") || "application/json",
+            "cache-control": "no-store",
+            "x-replay-config-forwarded-path": "/config",
+            "x-replay-config-has-api-key": "yes",
+          },
+        });
+      }
+    }
 
     return new NextResponse(responseBody, {
       status: upstream.status,
