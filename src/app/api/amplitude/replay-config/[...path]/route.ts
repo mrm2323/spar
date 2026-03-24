@@ -10,12 +10,21 @@ function joinUrl(base: string, path: string, search: string): string {
   return `${normalizedBase}${normalizedPath}${search}`;
 }
 
+function mapReplayConfigPath(path: string): string {
+  // The web SDK requests /api/v1/config on the provided base URL,
+  // but Amplitude's replay config host serves this at /config.
+  if (path === "/api/v1/config") return "/config";
+  if (path.startsWith("/api/v1/config/")) return path.replace("/api/v1/config", "/config");
+  return path;
+}
+
 async function forward(
   request: NextRequest,
   pathSegments: string[]
 ): Promise<NextResponse> {
   try {
-    const forwardedPath = pathSegments.length > 0 ? `/${pathSegments.join("/")}` : "/config";
+    const requestedPath = pathSegments.length > 0 ? `/${pathSegments.join("/")}` : "/config";
+    const forwardedPath = mapReplayConfigPath(requestedPath);
     const targetUrl = joinUrl(
       REPLAY_CONFIG_UPSTREAM_BASE_URL,
       forwardedPath,
