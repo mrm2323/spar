@@ -11,8 +11,9 @@ function joinUrl(base: string, path: string, search: string): string {
 }
 
 function mapReplayConfigPath(path: string): string {
-  // The web SDK requests /api/v1/config on the provided base URL,
+  // The web SDK can request replay config via /api/* style paths,
   // but Amplitude's replay config host serves this at /config.
+  if (path === "/api" || path.startsWith("/api/")) return "/config";
   if (path === "/api/v1/config") return "/config";
   if (path.startsWith("/api/v1/config/")) return path.replace("/api/v1/config", "/config");
   return path;
