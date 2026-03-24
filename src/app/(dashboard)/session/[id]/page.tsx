@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Paperclip, Loader2, Check, Monitor, Square, Star } from "lucide-react";
 import Vapi from "@vapi-ai/web";
+import { useUser } from "@clerk/nextjs";
 import { startPracticeReplaySession, trackEvent } from "@/lib/analytics";
 
 type SessionStatus =
@@ -59,6 +60,7 @@ export default function SessionPage() {
   const params = useParams<{ id: string }>();
   const id = params?.id;
   const router = useRouter();
+  const { user, isLoaded: userLoaded } = useUser();
   const [trustAcknowledged, setTrustAcknowledged] = useState(false);
   const [status, setStatus] = useState<SessionStatus>("trust");
   const [speaking, setSpeaking] = useState<SpeakingState>("idle");
@@ -102,13 +104,14 @@ export default function SessionPage() {
   const replayStartSentRef = useRef(false);
 
   useEffect(() => {
-    if (!id || replayStartSentRef.current) return;
+    if (!id || !userLoaded || !user?.id || replayStartSentRef.current) return;
     replayStartSentRef.current = true;
     startPracticeReplaySession({
       source: "session_page_mount",
       session_id: id,
+      user_id: user.id,
     });
-  }, [id]);
+  }, [id, userLoaded, user?.id]);
 
   useEffect(() => {
     if (!id) {

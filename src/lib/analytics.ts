@@ -239,6 +239,11 @@ export function startPracticeReplaySession(
     // Flush old session events before rotating.
     amplitude.flush();
 
+    // Ensure replay session ownership is attached to the authenticated user.
+    if (currentUserId) {
+      amplitude.setUserId(currentUserId);
+    }
+
     // Start a new Amplitude session boundary used by Replay.
     const newSessionId = Date.now();
     amplitude.setSessionId(newSessionId);
