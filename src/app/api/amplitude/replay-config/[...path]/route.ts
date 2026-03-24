@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 const REPLAY_CONFIG_UPSTREAM_BASE_URL =
   process.env.AMPLITUDE_REPLAY_CONFIG_UPSTREAM_BASE_URL?.trim() ||
   "https://sr-client-cfg.amplitude.com";
+const AMPLITUDE_API_KEY_FALLBACK =
+  process.env.NEXT_PUBLIC_AMPLITUDE_API_KEY?.trim() || "";
 
 function joinUrl(base: string, path: string, search: string): string {
   const normalizedBase = base.endsWith("/") ? base.slice(0, -1) : base;
@@ -55,6 +57,9 @@ async function forward(
     const query = new URLSearchParams(request.nextUrl.searchParams);
     if (mapped.apiKeyFromPath && !query.get("api_key")) {
       query.set("api_key", mapped.apiKeyFromPath);
+    }
+    if (!query.get("api_key") && AMPLITUDE_API_KEY_FALLBACK) {
+      query.set("api_key", AMPLITUDE_API_KEY_FALLBACK);
     }
     const search = query.toString() ? `?${query.toString()}` : "";
     const targetUrl = joinUrl(
