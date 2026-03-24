@@ -64,6 +64,8 @@ async function forward(
       headers: {
         "content-type": upstream.headers.get("content-type") || "application/json",
         "cache-control": "no-store",
+        "x-replay-config-forwarded-path": forwardedPath,
+        "x-replay-config-has-api-key": query.get("api_key") ? "yes" : "no",
       },
     });
   } catch (error) {
