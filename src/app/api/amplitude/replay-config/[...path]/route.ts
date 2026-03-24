@@ -13,9 +13,9 @@ function joinUrl(base: string, path: string, search: string): string {
 function mapReplayConfigPath(path: string): { path: string; apiKeyFromPath?: string } {
   // The web SDK can request replay config via /api/* style paths,
   // but Amplitude's replay config host serves this at /config.
-  const keyInPath = path.match(/^\/api\/([^/]+)~\/?$/);
+  const keyInPath = path.match(/^\/api\/([^/]+?)(?:~|%7E|%7e)\/?$/);
   if (keyInPath?.[1]) {
-    return { path: "/config", apiKeyFromPath: keyInPath[1] };
+    return { path: "/config", apiKeyFromPath: decodeURIComponent(keyInPath[1]) };
   }
 
   if (path === "/api" || path.startsWith("/api/")) return { path: "/config" };
