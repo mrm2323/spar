@@ -43,6 +43,12 @@ function hasEndIntent(text: string): boolean {
   );
 }
 
+function hasSpecificSessionEndIntent(text: string): boolean {
+  return /\b(end|stop|finish|wrap\s*up|hang\s*up)\b\s+(the\s+|this\s+|my\s+)?\b(session|call|conversation)\b/i.test(
+    text
+  );
+}
+
 function hasImmediateEndIntent(text: string): boolean {
   return /\b(end|stop|finish|hang\s*up)\b.*\b(now|right now|immediately|please)\b/i.test(text);
 }
@@ -243,6 +249,13 @@ export default function SessionPage() {
 
         if (hasEndIntent(text) && !endingRef.current) {
           if (hasImmediateEndIntent(text) || (withinConfirmWindow && hasEndConfirmation(text))) {
+            pendingEndConfirmUntilRef.current = null;
+            setSilenceBanner("Heard you. Ending this session now.");
+            void endSessionRef.current?.("user_voice_request");
+            return;
+          }
+
+          if (hasSpecificSessionEndIntent(text)) {
             pendingEndConfirmUntilRef.current = null;
             setSilenceBanner("Heard you. Ending this session now.");
             void endSessionRef.current?.("user_voice_request");
@@ -641,6 +654,7 @@ export default function SessionPage() {
     setMidContextSaved(false);
     try {
       const draft = midContextDraft.trim();
+      setMidContextDraft("");
       markUserActivity();
       const vapi = vapiRef.current;
       if (vapi) {
@@ -669,8 +683,10 @@ export default function SessionPage() {
       });
       if (res.ok) {
         setMidContextSaved(true);
-        setMidContextDraft("");
         window.setTimeout(() => setMidContextSaved(false), 4000);
+      } else {
+        // Restore unsaved draft if persistence failed.
+        setMidContextDraft(draft);
       }
     } finally {
       setMidContextSaving(false);
@@ -894,7 +910,16 @@ export default function SessionPage() {
               </div>
               <div className="max-h-36 space-y-2 overflow-y-auto pr-1">
                 {liveMessages.slice(-8).map((m) => (
-                  <div key={m.id} className="text-xs leading-relaxed text-slate-200">
+                  <div
+                    key={m.id}
+                    className={`rounded-lg border px-2.5 py-2 text-xs leading-relaxed ${
+                      m.role === "assistant"
+                        ? "border-cyan-700/50 bg-cyan-950/20 text-slate-100"
+                        : m.role === "user"
+                          ? "border-emerald-700/50 bg-emerald-950/20 text-slate-100"
+                          : "border-amber-700/50 bg-amber-950/20 text-slate-100"
+                    }`}
+                  >
                     <span
                       className={`mr-2 uppercase tracking-wider ${
                         m.role === "assistant"
@@ -906,7 +931,7 @@ export default function SessionPage() {
                     >
                       {m.role === "assistant" ? "Kabir" : m.role === "user" ? "You" : "System"}
                     </span>
-                    <span>{m.content}</span>
+                    <span className="whitespace-pre-wrap">{m.content}</span>
                   </div>
                 ))}
               </div>

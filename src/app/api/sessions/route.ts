@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { createSupabaseAdmin } from "@/lib/supabase/server";
 import { getUserSessionUsage } from "@/lib/session-cap";
+import { groupSessionsIntoThreads } from "@/lib/session-threading";
 import { NextResponse } from "next/server";
 
 type EnrichedSession = {
@@ -11,49 +12,6 @@ type EnrichedSession = {
   user_id: string;
   notes_preview: string | null;
 };
-
-const IGNORED_TOKENS = new Set([
-  "key",
-  "shift",
-  "next",
-  "move",
-  "kabir",
-  "practice",
-  "session",
-  "conversation",
-  "your",
-  "with",
-  "this",
-  "that",
-  "from",
-  "have",
-  "been",
-  "just",
-]);
-
-function toKeyText(value: string | null | undefined): string {
-  return (value || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function toTokenSet(value: string | null | undefined): Set<string> {
-  const clean = toKeyText(value);
-  const words = clean.split(" ").filter((w) => w.length >= 4 && !IGNORED_TOKENS.has(w));
-  return new Set(words);
-}
-
-function similarity(a: Set<string>, b: Set<string>): number {
-  if (a.size === 0 || b.size === 0) return 0;
-  let intersection = 0;
-  for (const token of a) {
-    if (b.has(token)) intersection += 1;
-  }
-  const union = a.size + b.size - intersection;
-  return union > 0 ? intersection / union : 0;
-}
 
 export async function GET() {
   const { userId } = await auth();
@@ -128,58 +86,16 @@ export async function GET() {
     };
   });
 
-  type SessionThread = {
-    id: string;
-    head: EnrichedSession;
-    headTokens: Set<string>;
-    attempts: number;
-  };
-
-  const threads: SessionThread[] = [];
-
-  for (const session of enriched) {
-    const sessionText = session.context || session.notes_preview || "";
-    const sessionTokens = toTokenSet(sessionText);
-    const sessionEnded = session.ended_at ? new Date(session.ended_at).getTime() : Date.now();
-
-    let bestIdx = -1;
-    let bestScore = 0;
-
-    for (let i = 0; i < threads.length; i += 1) {
-      const t = threads[i];
-      const headEnded = t.head.ended_at ? new Date(t.head.ended_at).getTime() : Date.now();
-      const hoursApart = Math.abs(sessionEnded - headEnded) / (1000 * 60 * 60);
-
-      const exactContextMatch =
-        toKeyText(session.context) &&
-        toKeyText(session.context) === toKeyText(t.head.context);
-
-      const score = exactContextMatch ? 1 : similarity(sessionTokens, t.headTokens);
-      const closeEnough = hoursApart <= 72;
-
-      if (closeEnough && score > bestScore) {
-        bestScore = score;
-        bestIdx = i;
-      }
-    }
-
-    if (bestIdx >= 0 && bestScore >= 0.28) {
-      threads[bestIdx].attempts += 1;
-      continue;
-    }
-
-    threads.push({
-      id: session.id,
-      head: session,
-      headTokens: sessionTokens,
-      attempts: 1,
-    });
-  }
+  const threads = groupSessionsIntoThreads(enriched, {
+    maxHoursApart: 72,
+    minSimilarity: 0.28,
+  });
 
   const threaded = threads.map((t) => ({
     ...t.head,
     thread_id: t.id,
     thread_attempts: t.attempts,
+    thread_session_ids: t.sessions.map((s) => s.id),
   }));
 
   return NextResponse.json({

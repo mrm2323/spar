@@ -206,6 +206,7 @@ export function NotesClient({
   initialNotes,
   initialDate,
   initialSession,
+  initialThreadAttempts,
   initialOutcomeSubmitted,
   completedSessionsCount,
 }: {
@@ -217,6 +218,7 @@ export function NotesClient({
     ended_at: string | null;
     duration_seconds?: number | null;
   } | null;
+  initialThreadAttempts?: number;
   initialOutcomeSubmitted: boolean;
   completedSessionsCount: number;
 }) {
@@ -693,6 +695,11 @@ export function NotesClient({
         <h1 className="mt-1 text-xl font-semibold tracking-tight text-[#E2E8F0]">
           Kabir&apos;s notes
         </h1>
+        {(initialThreadAttempts || 1) > 1 ? (
+          <p className="mt-2 text-xs text-cyan-300/85">
+            Thread history: {initialThreadAttempts} attempts combined
+          </p>
+        ) : null}
 
         {/* SECTION 1 — KABIR'S TAKE */}
         <section className="mt-10 border-l-2 border-cyan-500/50 pl-4">
@@ -1127,6 +1134,8 @@ export function NotesClient({
                   const role = (m.role || "").toLowerCase();
                   const isUser =
                     role === "user" || role === "customer";
+                  const isSystem =
+                    role === "system" || role === "status" || role === "attempt_marker";
                   const content = m.content || "";
                   const isHighlight =
                     isUser &&
@@ -1135,11 +1144,15 @@ export function NotesClient({
                     <div
                       key={i}
                       className={`rounded px-2 py-1.5 ${
-                        isHighlight ? "bg-emerald-950/20" : ""
+                        isHighlight
+                          ? "bg-emerald-950/20"
+                          : isSystem
+                            ? "bg-slate-900/35"
+                            : ""
                       }`}
                     >
                       <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500">
-                        {isUser ? "You" : "Kabir"}
+                        {isSystem ? "System" : isUser ? "You" : "Kabir"}
                       </span>
                       <p
                         className="mt-0.5 whitespace-pre-wrap text-slate-300"
