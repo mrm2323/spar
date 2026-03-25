@@ -15,6 +15,7 @@
 
 import { createHash } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import OpenAI from "openai";
 import { getRecentSessionSummariesForPrompt } from "@/lib/kabir/session-history";
 
 /** API base — https://api.supermemory.ai/v3 */
@@ -64,6 +65,11 @@ function flattenMetadata(
     }
   }
   return out;
+}
+
+function normalizeTag(raw: string): string {
+  const cleaned = raw.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "_");
+  return cleaned.slice(0, 100) || "unknown";
 }
 
 /** Ingest or update a document (customId enables upsert / continuation). */
@@ -201,6 +207,79 @@ ${kabirNotes}
   } catch (e) {
     console.error("[Supermemory] saveSessionMemory error:", e);
   }
+}
+
+export async function savePersonProfile(
+  userId: string,
+  personName: string,
+  insights: string
+): Promise<void> {
+  if (!hasSupermemory()) return;
+
+  const baseUserTag = normalizeTag(`user_${userId}`);
+  const peopleTag = normalizeTag(`people_${userId}`);
+  const personTag = normalizeTag(
+    `person_${personName.toLowerCase().replace(/\s+/g, "_")}_${userId}`
+  );
+  const content = `PERSON PROFILE: ${personName}\n${insights}`.trim();
+
+  for (const tag of [baseUserTag, peopleTag, personTag]) {
+    try {
+      const { ok, status, body } = await ingestDocument({
+        content,
+        containerTag: tag,
+        customId: `person_${personTag}`,
+        metadata: {
+          type: "person_profile",
+          personName,
+          personTag,
+          userTag: baseUserTag,
+          peopleTag,
+          date: new Date().toISOString(),
+        },
+      });
+      if (!ok) {
+        console.error(
+          "[Supermemory] savePersonProfile failed:",
+          status,
+          body?.slice(0, 400)
+        );
+      }
+    } catch (e) {
+      console.error("[Supermemory] savePersonProfile error:", e);
+    }
+  }
+}
+
+export async function getPeopleContext(userId: string): Promise<string> {
+  if (!hasSupermemory()) return "";
+
+  const peopleTag = normalizeTag(`people_${userId}`);
+  const data = await searchDocuments({
+    q: "Who are the people in this user's life? What are their personalities, relationship history, past interactions, and behavioral patterns?",
+    containerTags: [peopleTag],
+    limit: 20,
+  });
+  const rows = normalizeSearchResults(data)
+    .map((r) => extractResultText(r as Record<string, unknown>).trim())
+    .filter((t) => t.length > 0);
+
+  return rows.join("\n\n");
+}
+
+export async function listKnownPeopleNames(userId: string): Promise<string[]> {
+  if (!hasSupermemory()) return [];
+  const text = await getPeopleContext(userId);
+  if (!text) return [];
+
+  const names = new Set<string>();
+  const re = /PERSON PROFILE:\s*([^\n]+)/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const n = m[1]?.trim();
+    if (n) names.add(n);
+  }
+  return Array.from(names).slice(0, 6);
 }
 
 /**
@@ -409,6 +488,37 @@ export async function addUserMemory(
   }
 }
 
+export async function analyzePatterns(
+  userId: string,
+  currentTranscript: string
+): Promise<string | null> {
+  if (!process.env.OPENAI_API_KEY?.trim()) return null;
+
+  const previousMemories = await getMemoryContext(userId);
+  if (!previousMemories || previousMemories.length < 100) return null;
+
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      {
+        role: "system",
+        content:
+          "You analyze communication patterns across multiple conversations. You have a user's history from previous sessions and their current session. Find ONE cross-session pattern the user probably cannot see themselves. Write it as one paragraph in a direct, warm, honest voice. Examples: 'Every conversation we have had, you start by making yourself smaller. With your professor you apologized. In your interview you said you were just part of the team. This is not about them. This is about you not believing you are allowed to want things.' If no meaningful pattern exists yet, respond with exactly the word null.",
+      },
+      {
+        role: "user",
+        content: `PREVIOUS SESSIONS:\n${previousMemories}\n\nCURRENT SESSION:\n${currentTranscript}`,
+      },
+    ],
+    temperature: 0.7,
+  });
+
+  const insight = response.choices[0]?.message?.content?.trim();
+  if (!insight || insight === "null") return null;
+  return insight;
+}
+
 export function formatKabirNotesForMemory(notes: Record<string, unknown>): string {
   const parts: string[] = [];
   const s = (k: string) => {
@@ -500,4 +610,71 @@ export function formatKabirNotesForMemory(notes: Record<string, unknown>): strin
   if (s("one_thing_to_fix")) parts.push(`One thing to fix: ${s("one_thing_to_fix")}`);
 
   return parts.join("\n\n") || JSON.stringify(notes);
+}
+
+export type PersonDashboardCard = {
+  name: string;
+  relationship?: string;
+  summary: string;
+  fullProfile: string;
+  lastDiscussedIso: string | null;
+};
+
+/**
+ * People profiles stored under `people_{userId}` for the Memory dashboard.
+ */
+export async function fetchPeopleForDashboard(
+  userId: string
+): Promise<PersonDashboardCard[]> {
+  if (!hasSupermemory()) return [];
+
+  const peopleTag = normalizeTag(`people_${userId}`);
+  const data = await searchDocuments({
+    q: "PERSON PROFILE relationships roommate manager partner friend colleague family",
+    containerTags: [peopleTag],
+    limit: 28,
+  });
+
+  const rows = normalizeSearchResults(data);
+  const byTitle = new Map<string, { full: string; dates: string[] }>();
+
+  for (const r of rows) {
+    const text = extractResultText(r as Record<string, unknown>).trim();
+    if (!text) continue;
+    const meta = (r as Record<string, unknown>).metadata as
+      | Record<string, unknown>
+      | undefined;
+    const date = meta?.date != null ? String(meta.date) : "";
+    const m = text.match(/^PERSON PROFILE:\s*([^\n]+)/i);
+    const title = m ? m[1].trim() : "Someone";
+    const body = m ? text.slice((m.index ?? 0) + m[0].length).trim() : text;
+    const prev = byTitle.get(title);
+    const merged = prev ? `${prev.full}\n\n${body}` : body;
+    const dates = [...(prev?.dates ?? [])];
+    if (date) dates.push(date);
+    byTitle.set(title, { full: merged, dates });
+  }
+
+  const cards: PersonDashboardCard[] = [];
+  for (const [title, { full, dates }] of byTitle) {
+    const last =
+      dates.length > 0
+        ? dates.sort().reverse()[0] ?? null
+        : null;
+    const dashParts = title.split(/\s*[—–-]\s*/);
+    const baseName = dashParts[0]?.trim() || title;
+    const relationship =
+      dashParts.length > 1 ? dashParts.slice(1).join(" — ").trim() : undefined;
+    const firstLine =
+      full.split(/\n/).find((l) => l.trim().length > 0)?.trim() || full;
+    cards.push({
+      name: baseName,
+      relationship,
+      summary: firstLine.slice(0, 240),
+      fullProfile: full.slice(0, 12_000),
+      lastDiscussedIso: last,
+    });
+  }
+
+  return cards.sort((a, b) => a.name.localeCompare(b.name));
 }

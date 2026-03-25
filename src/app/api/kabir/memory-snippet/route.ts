@@ -1,5 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
-import { searchMemory } from "@/lib/kabir/memory";
+import { listKnownPeopleNames, searchMemory } from "@/lib/kabir/memory";
 import { NextResponse } from "next/server";
 
 /**
@@ -17,6 +17,7 @@ export async function GET() {
   );
 
   const snippet = lines[0]?.trim().slice(0, 280) || null;
+  const peopleNames = await listKnownPeopleNames(userId);
 
-  return NextResponse.json({ snippet });
+  return NextResponse.json({ snippet, peopleNames });
 }

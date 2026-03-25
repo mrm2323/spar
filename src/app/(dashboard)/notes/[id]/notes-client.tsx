@@ -50,6 +50,9 @@ interface NotesData {
   best_moment?: string;
   worst_moment?: string;
   one_thing_to_fix?: string;
+  cross_session_insight?: string;
+  /** Empathy read on the other person in the conversation */
+  aboutThem?: string;
 }
 
 /** Text shown for ARE YOU READY (new `readiness` field or legacy label mapping). */
@@ -204,6 +207,7 @@ export function NotesClient({
   initialDate,
   initialSession,
   initialOutcomeSubmitted,
+  completedSessionsCount,
 }: {
   sessionId: string;
   initialNotes?: NotesData | null;
@@ -214,6 +218,7 @@ export function NotesClient({
     duration_seconds?: number | null;
   } | null;
   initialOutcomeSubmitted: boolean;
+  completedSessionsCount: number;
 }) {
   const router = useRouter();
   const [notes, setNotes] = useState<NotesData | null>(initialNotes || null);
@@ -548,6 +553,16 @@ export function NotesClient({
     notes?.one_thing_to_fix ||
     "";
 
+  const crossSessionInsight =
+    typeof notes?.cross_session_insight === "string"
+      ? notes.cross_session_insight.trim()
+      : "";
+  const showCrossSessionInsight =
+    completedSessionsCount >= 2 && crossSessionInsight.length > 0;
+
+  const aboutThem =
+    typeof notes?.aboutThem === "string" ? notes.aboutThem.trim() : "";
+
   const readinessParagraph = useMemo(() => {
     if (!notes) return "";
     return getReadinessDisplay(notes);
@@ -716,6 +731,23 @@ export function NotesClient({
                 </li>
               ))}
             </ul>
+          </section>
+        ) : null}
+
+        {/* ABOUT THE OTHER PERSON */}
+        {aboutThem ? (
+          <section className="mt-12 border-l-2 border-violet-500/45 pl-4">
+            <h2
+              className="font-mono text-[10px] uppercase tracking-[0.2em] text-slate-400"
+              style={{
+                fontFamily: "var(--font-ibm-mono), ui-monospace, monospace",
+              }}
+            >
+              About them
+            </h2>
+            <p className="mt-3 text-[15px] leading-relaxed text-[#E2E8F0]">
+              {renderWithDoubleQuoteHighlights(aboutThem)}
+            </p>
           </section>
         ) : null}
 
@@ -944,6 +976,25 @@ export function NotesClient({
             </div>
           </div>
         </section>
+
+        {showCrossSessionInsight ? (
+          <section className="mt-12 border-l-2 border-violet-500/40 pl-4">
+            <h2
+              className="font-mono text-[10px] uppercase tracking-[0.2em] text-slate-400"
+              style={{
+                fontFamily: "var(--font-ibm-mono), ui-monospace, monospace",
+              }}
+            >
+              SOMETHING KABIR NOTICED
+            </h2>
+            <p className="mt-3 text-[16px] leading-relaxed text-slate-200">
+              {crossSessionInsight}
+            </p>
+            <p className="mt-2 text-[11px] text-slate-500">
+              Based on your sessions with Kabir.
+            </p>
+          </section>
+        ) : null}
 
         {/* SECTION 5 — BEFORE YOU WALK IN */}
         <section

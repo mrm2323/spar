@@ -37,6 +37,12 @@ export default async function NotesPage({
     .eq("session_id", id)
     .maybeSingle();
 
+  const { count: completedSessionsCount } = await supabase
+    .from("sessions")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("status", "completed");
+
   return (
     <NotesClient
       sessionId={id}
@@ -54,6 +60,7 @@ export default async function NotesPage({
           : null
       }
       initialOutcomeSubmitted={!!existingOutcome}
+      completedSessionsCount={completedSessionsCount || 0}
     />
   );
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Paperclip, Loader2, Check, Monitor, Square, Star } from "lucide-react";
+import { Paperclip, Loader2, Check, Star, Send } from "lucide-react";
 import Vapi from "@vapi-ai/web";
 import { useUser } from "@clerk/nextjs";
 import { startPracticeReplaySession, trackEvent } from "@/lib/analytics";
@@ -15,46 +15,6 @@ type SessionStatus =
   | "feedback"
   | "error";
 type SpeakingState = "listening" | "kabir" | "idle";
-
-function isUserCancelledDisplayMedia(e: unknown): boolean {
-  const d = e as { name?: string };
-  return d?.name === "NotAllowedError" || d?.name === "AbortError";
-}
-
-/** Wait until the screen-capture video element has drawable frames (or timeout). */
-function waitUntilVideoHasSize(
-  video: HTMLVideoElement,
-  timeoutMs: number
-): Promise<boolean> {
-  return new Promise((resolve) => {
-    const ok = () =>
-      video.videoWidth >= 2 &&
-      video.videoHeight >= 2 &&
-      video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
-    if (ok()) {
-      resolve(true);
-      return;
-    }
-    let done = false;
-    const finish = (result: boolean) => {
-      if (done) return;
-      done = true;
-      clearTimeout(tid);
-      video.removeEventListener("loadeddata", onReady);
-      video.removeEventListener("loadedmetadata", onReady);
-      video.removeEventListener("playing", onReady);
-      video.removeEventListener("resize", onReady);
-      resolve(result);
-    };
-    const onReady = () => {
-      if (ok()) finish(true);
-    };
-    const tid = window.setTimeout(() => finish(false), timeoutMs);
-    video.addEventListener("loadeddata", onReady);
-    video.addEventListener("loadedmetadata", onReady);
-    video.addEventListener("playing", onReady);
-  });
-}
 
 export default function SessionPage() {
   const params = useParams<{ id: string }>();
@@ -76,22 +36,6 @@ export default function SessionPage() {
   const callIdRef = useRef<string | null>(null);
   const endingRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const screenStreamRef = useRef<MediaStream | null>(null);
-  const screenIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  /** Prevents overlapping getDisplayMedia (double-clicks / picker still open). */
-  const screenShareStartingRef = useRef(false);
-  /** Abort in-flight screen-context fetch when user stops sharing or cancels. */
-  const screenCaptureAbortRef = useRef<AbortController | null>(null);
-  /** Bumps when a new capture starts or sharing stops — stale async work must not touch UI. */
-  const screenCaptureGenerationRef = useRef(0);
-  const [screenSharing, setScreenSharing] = useState(false);
-  /** True while permission picker is open or stream is wiring up */
-  const [screenShareBusy, setScreenShareBusy] = useState(false);
-  const [screenStatus, setScreenStatus] = useState<
-    "idle" | "processing" | "done"
-  >("idle");
-  const [screenError, setScreenError] = useState<string | null>(null);
   const [capHint, setCapHint] = useState<string | null>(null);
   const [callRating, setCallRating] = useState<number | null>(null);
   const [recommendScore, setRecommendScore] = useState<number | null>(null);
@@ -323,212 +267,6 @@ export default function SessionPage() {
     [id]
   );
 
-  const stopScreenShare = useCallback(() => {
-    screenCaptureGenerationRef.current += 1;
-    screenCaptureAbortRef.current?.abort();
-    screenCaptureAbortRef.current = null;
-    if (screenIntervalRef.current) {
-      clearInterval(screenIntervalRef.current);
-      screenIntervalRef.current = null;
-    }
-    screenStreamRef.current?.getTracks().forEach((t) => t.stop());
-    screenStreamRef.current = null;
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-    setScreenSharing(false);
-    setScreenStatus("idle");
-    screenShareStartingRef.current = false;
-    setScreenShareBusy(false);
-  }, []);
-
-  const captureAndSendScreen = useCallback(async () => {
-    screenCaptureGenerationRef.current += 1;
-    const generation = screenCaptureGenerationRef.current;
-    const ac = new AbortController();
-    screenCaptureAbortRef.current?.abort();
-    screenCaptureAbortRef.current = ac;
-
-    // Clear any stuck "Reading screen…" from a superseded capture.
-    setScreenStatus("idle");
-
-    const video = videoRef.current;
-    const vapi = vapiRef.current;
-    if (!video || !vapi) {
-      return;
-    }
-
-    const hasSize = await waitUntilVideoHasSize(video, 6000);
-    if (generation !== screenCaptureGenerationRef.current) return;
-    if (
-      !hasSize ||
-      video.videoWidth < 2 ||
-      video.videoHeight < 2
-    ) {
-      return;
-    }
-
-    if (generation !== screenCaptureGenerationRef.current) return;
-
-    setScreenError(null);
-    setScreenStatus("processing");
-
-    const fetchTimeoutMs = 90_000;
-    const fetchTimeoutId = window.setTimeout(() => ac.abort(), fetchTimeoutMs);
-
-    try {
-      const maxW = 1280;
-      const scale = Math.min(1, maxW / video.videoWidth);
-      const w = Math.round(video.videoWidth * scale);
-      const h = Math.round(video.videoHeight * scale);
-      const canvas = document.createElement("canvas");
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) throw new Error("no canvas");
-      ctx.drawImage(video, 0, 0, w, h);
-      const dataUrl = canvas.toDataURL("image/jpeg", 0.72);
-      const base64 = dataUrl.split(",")[1];
-      if (!base64) throw new Error("empty frame");
-
-      if (generation !== screenCaptureGenerationRef.current) return;
-
-      const res = await fetch("/api/screen-context", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          imageBase64: base64,
-          mimeType: "image/jpeg",
-        }),
-        signal: ac.signal,
-      });
-      const data = await res.json();
-
-      if (generation !== screenCaptureGenerationRef.current) return;
-
-      if (!res.ok) {
-        setScreenError(
-          typeof data.error === "string" ? data.error : "Screen capture failed"
-        );
-        setScreenStatus("idle");
-        return;
-      }
-      const description = String(data.description || "").trim();
-      if (!description) {
-        setScreenError("Could not read your screen.");
-        setScreenStatus("idle");
-        return;
-      }
-
-      const excerpt =
-        description.length > 8000
-          ? `${description.slice(0, 8000)}\n[Truncated]`
-          : description;
-
-      vapi.send({
-        type: "add-message",
-        triggerResponseEnabled: true,
-        message: {
-          role: "user",
-          content:
-            `[The user is sharing their screen with you. Here is what is visible right now — use it as context for coaching; do not read it aloud unless it helps.]\n\n${excerpt}`,
-        },
-      });
-      setScreenStatus("done");
-      trackEvent("screen_context_sent", { session_id: id });
-      setTimeout(() => {
-        if (generation === screenCaptureGenerationRef.current) {
-          setScreenStatus("idle");
-        }
-      }, 2500);
-    } catch (e) {
-      if (generation !== screenCaptureGenerationRef.current) return;
-      const err = e as { name?: string };
-      if (err?.name === "AbortError") {
-        setScreenStatus("idle");
-        return;
-      }
-      console.error("Screen capture failed:", e);
-      setScreenError("Could not send screen.");
-      setScreenStatus("idle");
-    } finally {
-      clearTimeout(fetchTimeoutId);
-      if (screenCaptureAbortRef.current === ac) {
-        screenCaptureAbortRef.current = null;
-      }
-    }
-  }, [id]);
-
-  const startScreenShare = useCallback(async () => {
-    if (!vapiRef.current) return;
-    if (screenShareStartingRef.current) return;
-
-    screenShareStartingRef.current = true;
-    setScreenShareBusy(true);
-    setScreenError(null);
-
-    try {
-      // `video: true` keeps the picker offering full screen, window, and tab across browsers.
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: false,
-      });
-
-      const video = videoRef.current;
-      if (!video) {
-        stream.getTracks().forEach((t) => t.stop());
-        return;
-      }
-
-      screenStreamRef.current = stream;
-      const track = stream.getVideoTracks()[0];
-      if (track) {
-        track.onended = () => stopScreenShare();
-      }
-
-      video.srcObject = stream;
-      video.muted = true;
-      video.playsInline = true;
-      await video.play().catch(() => {});
-
-      setScreenSharing(true);
-
-      // First capture after frames are available (handled inside captureAndSendScreen).
-      window.setTimeout(() => void captureAndSendScreen(), 400);
-
-      if (screenIntervalRef.current) clearInterval(screenIntervalRef.current);
-      screenIntervalRef.current = setInterval(() => {
-        void captureAndSendScreen();
-      }, 45_000);
-    } catch (e) {
-      console.error("getDisplayMedia:", e);
-      stopScreenShare();
-      if (isUserCancelledDisplayMedia(e)) {
-        setScreenError(
-          "You closed the picker — tap Share screen whenever you want to try again."
-        );
-        window.setTimeout(() => {
-          setScreenError((prev) =>
-            prev?.includes("closed the picker") ? null : prev
-          );
-        }, 5000);
-      } else {
-        setScreenError(
-          "Could not start screen sharing. Check browser permissions and try again."
-        );
-      }
-    } finally {
-      screenShareStartingRef.current = false;
-      setScreenShareBusy(false);
-    }
-  }, [captureAndSendScreen, stopScreenShare]);
-
-  useEffect(() => {
-    return () => {
-      stopScreenShare();
-    };
-  }, [stopScreenShare]);
-
   const endSession = useCallback(async () => {
     if (endingRef.current) return;
     endingRef.current = true;
@@ -539,7 +277,6 @@ export default function SessionPage() {
     });
     setEnding(true);
     setSpeaking("idle");
-    stopScreenShare();
 
     if (vapiRef.current) vapiRef.current.stop();
     setStatus("ended");
@@ -583,7 +320,7 @@ export default function SessionPage() {
         `Could not end this session: ${error instanceof Error ? error.message : "unknown error"}`
       );
     }
-  }, [id, speaking, elapsed, stopScreenShare]);
+  }, [id, speaking, elapsed]);
 
   const continueToNotes = useCallback(() => {
     if (!id) return;
@@ -664,10 +401,22 @@ export default function SessionPage() {
     setMidContextSaving(true);
     setMidContextSaved(false);
     try {
+      const draft = midContextDraft.trim();
+      const vapi = vapiRef.current;
+      if (vapi) {
+        vapi.send({
+          type: "add-message",
+          triggerResponseEnabled: true,
+          message: {
+            role: "user",
+            content: draft,
+          },
+        });
+      }
       const res = await fetch(`/api/session/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ appendContext: midContextDraft.trim() }),
+        body: JSON.stringify({ appendContext: draft }),
       });
       if (res.ok) {
         setMidContextSaved(true);
@@ -828,7 +577,7 @@ export default function SessionPage() {
   }
 
   return (
-    <div className="flex min-h-[80vh] flex-col items-center justify-center">
+    <div className="flex min-h-[80vh] flex-col items-center justify-center pb-[min(22rem,40vh)]">
       {status === "connecting" && (
         <div className="text-center">
           <div className="mb-4 flex justify-center gap-1">
@@ -846,13 +595,6 @@ export default function SessionPage() {
 
       {status === "active" && (
         <>
-          <video
-            ref={videoRef}
-            className="pointer-events-none fixed left-0 top-0 h-px w-px opacity-0"
-            playsInline
-            muted
-            aria-hidden
-          />
           <div className="mb-5 flex items-center gap-1.5">
             {Array.from({ length: 5 }).map((_, i) => (
               <div
@@ -889,113 +631,81 @@ export default function SessionPage() {
             className="hidden"
           />
 
-          <div className="fixed bottom-24 left-1/2 flex max-w-[95vw] -translate-x-1/2 flex-wrap items-center justify-center gap-3 rounded-full border border-slate-700/60 bg-slate-950/70 px-4 py-2 backdrop-blur">
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={attachStatus === "processing"}
-              className="flex items-center gap-1.5 text-xs text-slate-500 transition-colors hover:text-slate-300 disabled:opacity-50"
-            >
-              {attachStatus === "processing" ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : attachStatus === "done" ? (
-                <Check className="h-3.5 w-3.5 text-emerald-500" />
-              ) : (
-                <Paperclip className="h-3.5 w-3.5" />
-              )}
-              {attachStatus === "processing"
-                ? "Processing..."
-                : attachStatus === "done"
-                  ? "Sent to Kabir"
-                  : "Share a file"}
-            </button>
-
-            {!screenSharing ? (
-              <button
-                type="button"
-                onClick={() => void startScreenShare()}
-                disabled={screenShareBusy}
-                className="flex items-center gap-1.5 text-xs text-slate-500 transition-colors hover:text-cyan-300 disabled:pointer-events-none disabled:opacity-40"
-              >
-                <Monitor className="h-3.5 w-3.5" />
-                {screenShareBusy ? "Choose a screen…" : "Share screen"}
-              </button>
-            ) : (
-              <>
+          <div className="fixed bottom-0 left-1/2 z-40 w-[min(100vw-1rem,44rem)] -translate-x-1/2 px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2">
+            <div className="rounded-xl border border-slate-700/60 bg-slate-950/95 p-3 shadow-lg backdrop-blur">
+              <div className="flex items-end gap-2">
+                <textarea
+                  value={midContextDraft}
+                  onChange={(e) => setMidContextDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      void saveMidSessionContext();
+                    }
+                  }}
+                  placeholder="Message Kabir with extra context..."
+                  rows={2}
+                  className="max-h-32 min-h-[44px] flex-1 resize-y rounded-lg border border-slate-700/80 bg-slate-900/80 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 outline-none focus:border-cyan-500/50"
+                />
                 <button
                   type="button"
-                  onClick={stopScreenShare}
-                  className="flex items-center gap-1.5 text-xs text-rose-300/90 transition-colors hover:text-rose-200"
+                  disabled={midContextSaving || !midContextDraft.trim()}
+                  onClick={() => void saveMidSessionContext()}
+                  className="inline-flex h-11 shrink-0 items-center gap-1 rounded-lg bg-cyan-600 px-3 text-sm font-medium text-white transition-colors hover:bg-cyan-500 disabled:opacity-40"
                 >
-                  <Square className="h-3.5 w-3.5" />
-                  Stop screen
+                  {midContextSaving ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                  Send
+                </button>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={attachStatus === "processing"}
+                  title="Add a file to context"
+                  className="inline-flex min-w-[10rem] items-center justify-center gap-2 rounded-full border border-slate-600/60 bg-slate-900/50 px-4 py-2 text-xs font-medium text-slate-200 transition-colors hover:border-cyan-500/40 hover:bg-slate-800/60 disabled:opacity-50"
+                >
+                  {attachStatus === "processing" ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : attachStatus === "done" ? (
+                    <Check className="h-3.5 w-3.5 text-emerald-500" />
+                  ) : (
+                    <Paperclip className="h-3.5 w-3.5" />
+                  )}
+                  {attachStatus === "processing"
+                    ? "Processing…"
+                    : attachStatus === "done"
+                      ? "Sent to Kabir"
+                      : "Add file to context"}
                 </button>
                 <button
                   type="button"
-                  onClick={() => void captureAndSendScreen()}
-                  disabled={screenStatus === "processing"}
-                  className="text-xs text-cyan-400/90 hover:text-cyan-300 disabled:opacity-50"
+                  onClick={endSession}
+                  disabled={ending}
+                  className="rounded-full bg-rose-500/90 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-70"
                 >
-                  {screenStatus === "processing"
-                    ? "Reading screen…"
-                    : "Send screen now"}
+                  {ending ? "Ending…" : "End session"}
                 </button>
-                {screenStatus === "done" ? (
-                  <span className="text-[10px] text-emerald-500/90">Sent</span>
-                ) : null}
-              </>
-            )}
-
-            <button
-              onClick={endSession}
-              disabled={ending}
-              className="rounded bg-rose-500/85 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {ending ? "Ending..." : "End session"}
-            </button>
-          </div>
-
-          <details className="fixed bottom-[7.25rem] left-1/2 z-40 w-[min(100vw-2rem,24rem)] -translate-x-1/2 rounded-lg border border-slate-700/60 bg-slate-950/90 px-3 py-2 shadow-lg backdrop-blur">
-            <summary className="cursor-pointer list-none text-center text-xs font-medium text-slate-400 [&::-webkit-details-marker]:hidden">
-              Add context
-            </summary>
-            <div className="mt-3 space-y-2 pb-1">
-              <textarea
-                value={midContextDraft}
-                onChange={(e) => setMidContextDraft(e.target.value)}
-                placeholder="Paste more for Kabir — saved for his notes after this call."
-                rows={4}
-                className="w-full resize-y rounded border border-slate-700/80 bg-slate-900/80 px-2 py-2 text-xs text-slate-200 placeholder:text-slate-600 outline-none focus:border-cyan-500/50"
-              />
-              <button
-                type="button"
-                disabled={midContextSaving || !midContextDraft.trim()}
-                onClick={() => void saveMidSessionContext()}
-                className="w-full rounded bg-slate-800 py-2 text-xs font-medium text-slate-200 transition-colors hover:bg-slate-700 disabled:opacity-40"
-              >
-                {midContextSaving ? "Saving…" : "Save for notes"}
-              </button>
+              </div>
               {midContextSaved ? (
-                <p className="text-center text-[10px] text-emerald-500/90">
-                  Saved — Kabir will use this when he writes your notes.
+                <p className="mt-2 text-center text-[10px] text-emerald-500/90">
+                  Sent. Saved to this session for notes and memory.
                 </p>
               ) : (
-                <p className="text-center text-[10px] leading-snug text-slate-500">
-                  Kabir can&apos;t change mid-call voice from here. This text is
-                  stored on the session for notes.
+                <p className="mt-2 text-center text-[10px] leading-snug text-slate-500">
+                  Type to Kabir anytime; files upload as text for him to use.
                 </p>
               )}
             </div>
-          </details>
+          </div>
 
-          {(attachError || screenError) ? (
-            <p className="fixed bottom-14 left-1/2 max-w-md -translate-x-1/2 px-4 text-center text-xs text-red-400">
-              {attachError || screenError}
-            </p>
-          ) : null}
-          {screenSharing ? (
-            <p className="fixed bottom-28 left-1/2 max-w-sm -translate-x-1/2 px-4 text-center text-[11px] text-slate-500">
-              Screen context is sent now and every 45s. Kabir uses it quietly—he
-              won&apos;t read your screen aloud unless it helps.
+          {attachError ? (
+            <p className="fixed bottom-[11.5rem] left-1/2 z-40 max-w-md -translate-x-1/2 px-4 text-center text-xs text-red-400">
+              {attachError}
             </p>
           ) : null}
         </>

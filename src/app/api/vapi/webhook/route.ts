@@ -1,11 +1,15 @@
 import { after } from "next/server";
+import OpenAI from "openai";
 import { clerkClient } from "@clerk/nextjs/server";
 import { createSupabaseAdmin } from "@/lib/supabase/server";
 import { generateKabirNotes } from "@/lib/forensics/generate";
 import {
+  analyzePatterns,
   buildFullKabirContext,
   formatKabirNotesForMemory,
+  getPeopleContext,
   hasSupermemory,
+  savePersonProfile,
   saveSessionMemory,
 } from "@/lib/kabir/memory";
 import { buildKabirPrompt } from "@/lib/kabir/system-prompt";
@@ -123,6 +127,69 @@ function normalizePhone(raw: string): string {
   return digits ? `+${digits}` : raw.trim();
 }
 
+async function extractPeopleProfiles(
+  transcriptText: string
+): Promise<
+  Array<{
+    name: string;
+    traits: string;
+    relationship: string;
+    reactionStyle: string;
+    history: string;
+    positiveIntent: string;
+  }>
+> {
+  if (!process.env.OPENAI_API_KEY?.trim()) return [];
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const peopleExtraction = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      {
+        role: "system",
+        content: `Analyze this conversation transcript. Extract information about any people the user mentioned (not Kabir). For each person, capture:
+- Their name (or descriptor like "my roommate" or "my manager")
+- Personality traits inferred from what the user described
+- Relationship to the user
+- How they typically react in difficult situations (if mentioned)
+- History of interactions the user described
+- Any positive intent that might explain their behavior
+
+Return JSON object: { "people": [{ "name": string, "traits": string, "relationship": string, "reactionStyle": string, "history": string, "positiveIntent": string }] }
+If no people were discussed in detail, return {"people":[]}.`,
+      },
+      {
+        role: "user",
+        content: transcriptText,
+      },
+    ],
+    response_format: { type: "json_object" },
+  });
+
+  const parsed = JSON.parse(
+    peopleExtraction.choices[0]?.message?.content || '{"people":[]}'
+  ) as {
+    people?: Array<{
+      name?: string;
+      traits?: string;
+      relationship?: string;
+      reactionStyle?: string;
+      history?: string;
+      positiveIntent?: string;
+    }>;
+  };
+  const people = Array.isArray(parsed.people) ? parsed.people : [];
+  return people
+    .map((p) => ({
+      name: (p.name || "").trim(),
+      traits: (p.traits || "").trim(),
+      relationship: (p.relationship || "").trim(),
+      reactionStyle: (p.reactionStyle || "").trim(),
+      history: (p.history || "").trim(),
+      positiveIntent: (p.positiveIntent || "").trim(),
+    }))
+    .filter((p) => p.name.length > 0);
+}
+
 export async function POST(req: Request) {
   const body = await req.json();
   const { type } = body.message || body;
@@ -167,13 +234,20 @@ export async function POST(req: Request) {
       }
 
       let memoryText = "";
+      let peopleContext = "";
       try {
         const memoryOn = await getMemoryPreference(resolvedUserId);
         if (memoryOn) {
-          memoryText = await buildFullKabirContext(resolvedUserId, supabase);
+          [memoryText, peopleContext] = await Promise.all([
+            buildFullKabirContext(resolvedUserId, supabase),
+            getPeopleContext(resolvedUserId),
+          ]);
         }
       } catch {
-        memoryText = await buildFullKabirContext(resolvedUserId, supabase);
+        [memoryText, peopleContext] = await Promise.all([
+          buildFullKabirContext(resolvedUserId, supabase),
+          getPeopleContext(resolvedUserId),
+        ]);
       }
 
       const usage = await getUserSessionUsage(supabase, resolvedUserId, {
@@ -202,6 +276,7 @@ export async function POST(req: Request) {
         durationSeconds: effectiveDurationSeconds,
         userName: phoneUserFirstName,
         userMemory: memoryText.trim() ? memoryText : undefined,
+        peopleContext: peopleContext.trim() ? peopleContext : undefined,
       });
 
       if (phoneNumber && !reachedCap) {
@@ -346,6 +421,52 @@ export async function POST(req: Request) {
                 );
               } catch (error) {
                 console.error("Failed to save memory:", error);
+              }
+            }
+
+            try {
+              const people = await extractPeopleProfiles(transcriptText);
+              for (const person of people) {
+                const insights = `Name: ${person.name}
+Relationship: ${person.relationship || "unknown"}
+Personality traits: ${person.traits || "unknown"}
+How they react under tension: ${person.reactionStyle || "unknown"}
+Interaction history: ${person.history || "unknown"}
+Possible positive intent: ${person.positiveIntent || "unknown"}
+Last discussed: ${new Date().toISOString().split("T")[0]}`;
+                await savePersonProfile(canonicalUserId, person.name, insights);
+              }
+            } catch (peopleErr) {
+              console.error("[VAPI WEBHOOK] people extraction failed:", peopleErr);
+            }
+
+            const { count: completedSessionsCount } = await supabase
+              .from("sessions")
+              .select("id", { count: "exact", head: true })
+              .eq("user_id", canonicalUserId)
+              .eq("status", "completed");
+
+            if ((completedSessionsCount || 0) >= 2) {
+              try {
+                const crossSessionInsight = await analyzePatterns(
+                  canonicalUserId,
+                  transcriptText
+                );
+                if (crossSessionInsight && generated?.notes) {
+                  const nextMoments = {
+                    ...(generated.notes as Record<string, unknown>),
+                    cross_session_insight: crossSessionInsight,
+                  };
+                  await supabase
+                    .from("forensics_reports")
+                    .update({ moments: nextMoments })
+                    .eq("session_id", session.id);
+                }
+              } catch (patternErr) {
+                console.error(
+                  "[VAPI WEBHOOK] analyzePatterns failed:",
+                  patternErr
+                );
               }
             }
 

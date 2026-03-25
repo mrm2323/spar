@@ -24,7 +24,6 @@ const isProtectedApi = createRouteMatcher([
   "/api/forensics(.*)",
   "/api/memory(.*)",
   "/api/process-attachment",
-  "/api/screen-context",
   "/api/kabir(.*)",
   "/api/user/phone",
   "/api/sessions",

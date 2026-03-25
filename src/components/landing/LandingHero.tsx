@@ -51,7 +51,7 @@ export function LandingHero({
           {isSignedIn ? (
             <>
               <Link
-                href="/dashboard/settings"
+                href="/dashboard/memory"
                 className="text-xs font-medium uppercase tracking-wider text-slate-300 transition-colors hover:text-cyan-300"
               >
                 Memory
@@ -132,10 +132,10 @@ export function LandingHero({
                   Open mic dashboard
                 </Link>
                 <Link
-                  href="/dashboard/settings"
+                  href="/dashboard/memory"
                   className="inline-flex min-h-[48px] items-center rounded-xl border border-white/14 bg-white/[0.05] px-6 py-3 text-sm font-medium text-slate-100 transition-colors hover:border-white/24 hover:bg-white/[0.08]"
                 >
-                  Memory settings
+                  Memory
                 </Link>
               </div>
             ) : (

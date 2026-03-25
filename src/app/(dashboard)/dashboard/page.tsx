@@ -74,6 +74,7 @@ function DashboardInner() {
   const [startError, setStartError] = useState<string | null>(null);
   const [capStatus, setCapStatus] = useState<SessionCapStatus | null>(null);
   const [memorySnippet, setMemorySnippet] = useState<string | null>(null);
+  const [knownPeople, setKnownPeople] = useState<string[]>([]);
   // const [phone, setPhone] = useState("");
   // const [phoneSaved, setPhoneSaved] = useState(false);
   // const [linkedPhone, setLinkedPhone] = useState<string | null>(null);
@@ -164,11 +165,21 @@ function DashboardInner() {
     let cancelled = false;
     fetch("/api/kabir/memory-snippet")
       .then((r) => r.json())
-      .then((data: { snippet?: string | null }) => {
-        if (!cancelled) setMemorySnippet(data.snippet ?? null);
+      .then((data: { snippet?: string | null; peopleNames?: string[] }) => {
+        if (!cancelled) {
+          setMemorySnippet(data.snippet ?? null);
+          setKnownPeople(
+            Array.isArray(data.peopleNames)
+              ? data.peopleNames.filter((x) => typeof x === "string")
+              : []
+          );
+        }
       })
       .catch(() => {
-        if (!cancelled) setMemorySnippet(null);
+        if (!cancelled) {
+          setMemorySnippet(null);
+          setKnownPeople([]);
+        }
       });
     return () => {
       cancelled = true;
@@ -393,23 +404,34 @@ function DashboardInner() {
                   </div>
                 )}
 
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={fileProcessing}
-                  className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-300 disabled:opacity-50"
-                >
-                  {fileProcessing ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <Paperclip className="h-3 w-3" />
-                  )}
-                  {fileProcessing ? "Processing..." : "Attach a file"}
-                </button>
+                <div className="flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={fileProcessing}
+                    className="inline-flex items-center gap-2 rounded-full border border-slate-600/55 bg-slate-900/40 px-5 py-2 text-xs font-medium text-slate-200 transition-colors hover:border-cyan-500/35 hover:bg-slate-800/50 disabled:opacity-50"
+                  >
+                    {fileProcessing ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Paperclip className="h-3.5 w-3.5" />
+                    )}
+                    {fileProcessing ? "Processing…" : "Add file to context"}
+                  </button>
+                </div>
 
                 {fileError ? (
                   <p className="text-xs text-red-400">{fileError}</p>
                 ) : null}
+
+                <button
+                  type="button"
+                  onClick={() => void startSession()}
+                  disabled={loading}
+                  className="w-full rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-500 disabled:opacity-50"
+                >
+                  Start session with this context
+                </button>
               </div>
             </details>
           )}
@@ -418,6 +440,11 @@ function DashboardInner() {
             <p className="mx-auto mt-4 flex max-w-lg items-center justify-center gap-2 px-2 text-center text-xs leading-relaxed text-slate-400">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" aria-hidden />
               <span>Kabir remembers your last session.</span>
+            </p>
+          ) : null}
+          {!loading && knownPeople.length > 0 ? (
+            <p className="mx-auto mt-1 max-w-lg px-2 text-center text-[11px] text-slate-500">
+              Kabir knows about: {knownPeople.join(", ")}
             </p>
           ) : null}
 

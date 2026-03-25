@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import memoryService from "@/services/memory";
+import { deleteUserMemoryCache } from "@/lib/memory/dashboard-cache";
 import { getMemoryPreference } from "@/lib/memory/preferences";
 
 export const runtime = "nodejs";
@@ -95,6 +96,7 @@ export async function POST(req: NextRequest) {
       }
       case "forget-all": {
         const ok = await memoryService.forgetAll(userId);
+        await deleteUserMemoryCache(userId);
         return NextResponse.json({ ok });
       }
       default:

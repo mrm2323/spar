@@ -1,6 +1,6 @@
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { createSupabaseAdmin } from "@/lib/supabase/server";
-import { buildFullKabirContext } from "@/lib/kabir/memory";
+import { buildFullKabirContext, getPeopleContext } from "@/lib/kabir/memory";
 import {
   buildResumeContextForPrompt,
   defaultResumeFirstMessage,
@@ -114,11 +114,15 @@ export async function POST(req: Request) {
 
     const memoryEnabled = await getMemoryPreference(userId);
     let memoryText = "";
+    let peopleContext = "";
     if (memoryEnabled) {
       console.log("Fetching memory for user:", userId);
-      memoryText = await buildFullKabirContext(userId, supabase, {
-        resumeSessionId: effectiveResumeSessionId,
-      });
+      [memoryText, peopleContext] = await Promise.all([
+        buildFullKabirContext(userId, supabase, {
+          resumeSessionId: effectiveResumeSessionId,
+        }),
+        getPeopleContext(userId),
+      ]);
       console.log("Memory retrieved, length:", memoryText.length);
       console.log("Memory content preview:", memoryText.substring(0, 200));
     }
@@ -130,6 +134,7 @@ export async function POST(req: Request) {
       durationSeconds: allowedSessionSeconds,
       userName: userFirstName,
       userMemory: memoryText.trim() ? memoryText : undefined,
+      peopleContext: peopleContext.trim() ? peopleContext : undefined,
       resumeContext: resumeBlock || undefined,
     });
 
