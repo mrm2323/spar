@@ -71,6 +71,7 @@ function DashboardInner() {
   const [files, setFiles] = useState<ProcessedFile[]>([]);
   const [fileProcessing, setFileProcessing] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [fileAcceptedNote, setFileAcceptedNote] = useState<string | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
   const [capStatus, setCapStatus] = useState<SessionCapStatus | null>(null);
   const [memorySnippet, setMemorySnippet] = useState<string | null>(null);
@@ -192,6 +193,7 @@ function DashboardInner() {
       if (!file) return;
 
       setFileError(null);
+      setFileAcceptedNote(null);
       setFileProcessing(true);
       trackEvent("attachment_upload_started", {
         source: "dashboard",
@@ -223,6 +225,7 @@ function DashboardInner() {
             source: "dashboard",
             file_name: data.fileName || file.name,
           });
+          setFileAcceptedNote(`Accepted: ${data.fileName || file.name}. Kabir will read this before the mic starts.`);
           setFiles((prev) => [
             ...prev,
             { name: data.fileName || file.name, text: data.text },
@@ -246,6 +249,7 @@ function DashboardInner() {
 
   const removeFile = useCallback((index: number) => {
     setFiles((prev) => prev.filter((_, i) => i !== index));
+    setFileAcceptedNote(null);
   }, []);
 
   const visibleSessions = showAllSessions ? sessions : sessions.slice(0, 3);
@@ -307,6 +311,10 @@ function DashboardInner() {
           firstMessage: data.firstMessage,
           maxDurationSeconds: data.maxDurationSeconds,
           cap: data.cap,
+          contextSummary: {
+            contextChars: merged.length,
+            files: files.map((f) => f.name),
+          },
         })
       );
       router.push(`/session/${data.sessionId}`);
@@ -374,6 +382,16 @@ function DashboardInner() {
                 <p className="text-xs leading-relaxed text-slate-500">
                   Kabir will read this before your conversation starts.
                 </p>
+                {contextText.trim() || files.length > 0 ? (
+                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+                    Context ready for Kabir: {contextText.trim().length} typed chars and {files.length} file{files.length === 1 ? "" : "s"}.
+                    This context will be loaded before you start speaking.
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-slate-700/60 bg-slate-900/40 px-3 py-2 text-xs text-slate-400">
+                    Optional: add typed notes or files, then start session.
+                  </div>
+                )}
 
                 <input
                   ref={fileInputRef}
@@ -422,6 +440,9 @@ function DashboardInner() {
 
                 {fileError ? (
                   <p className="text-xs text-red-400">{fileError}</p>
+                ) : null}
+                {fileAcceptedNote ? (
+                  <p className="text-xs text-emerald-300">{fileAcceptedNote}</p>
                 ) : null}
 
                 <button

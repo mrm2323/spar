@@ -73,6 +73,12 @@ export async function PATCH(
     vapiCallId?: string;
     /** Appended to session.context for notes generation (mid-session paste; not injected into live Vapi). */
     appendContext?: string;
+    appendTranscriptEntry?: {
+      role?: string;
+      content?: string;
+      source?: string;
+      time?: string;
+    };
   };
 
   const supabase = createSupabaseAdmin();
@@ -81,34 +87,72 @@ export async function PATCH(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  if (body.appendContext?.trim()) {
+  const appendContext = body.appendContext?.trim() || "";
+  const appendTranscriptContent = body.appendTranscriptEntry?.content?.trim() || "";
+
+  if (!body.vapiCallId && !appendContext && !appendTranscriptContent) {
+    return NextResponse.json(
+      { error: "Provide vapiCallId and/or appendContext and/or appendTranscriptEntry" },
+      { status: 400 }
+    );
+  }
+
+  const patchData: Record<string, unknown> = {};
+
+  if (appendContext || appendTranscriptContent) {
     const { data: row } = await supabase
       .from("sessions")
-      .select("context")
+      .select("context, transcript")
       .eq("id", sessionId)
       .maybeSingle();
 
-    const prev = typeof row?.context === "string" ? row.context.trim() : "";
-    const add = body.appendContext.trim();
-    const next = prev
-      ? `${prev}\n\n--- Additional context (during session) ---\n${add}`
-      : add;
+    if (appendContext) {
+      const prev = typeof row?.context === "string" ? row.context.trim() : "";
+      patchData.context = prev
+        ? `${prev}\n\n--- Additional context (during session) ---\n${appendContext}`
+        : appendContext;
+    }
 
-    await supabase.from("sessions").update({ context: next }).eq("id", sessionId);
+    if (appendTranscriptContent) {
+      const existingRaw = row?.transcript;
+      let existingTranscript: Array<Record<string, unknown>> = [];
+
+      if (Array.isArray(existingRaw)) {
+        existingTranscript = existingRaw.filter(
+          (item): item is Record<string, unknown> =>
+            Boolean(item) && typeof item === "object" && !Array.isArray(item)
+        );
+      } else if (typeof existingRaw === "string") {
+        try {
+          const parsed = JSON.parse(existingRaw) as unknown;
+          if (Array.isArray(parsed)) {
+            existingTranscript = parsed.filter(
+              (item): item is Record<string, unknown> =>
+                Boolean(item) && typeof item === "object" && !Array.isArray(item)
+            );
+          }
+        } catch {
+          existingTranscript = [];
+        }
+      }
+
+      existingTranscript.push({
+        role: body.appendTranscriptEntry?.role || "user",
+        content: appendTranscriptContent,
+        source: body.appendTranscriptEntry?.source || "typed",
+        time: body.appendTranscriptEntry?.time || new Date().toISOString(),
+      });
+
+      patchData.transcript = existingTranscript.slice(-600);
+    }
   }
 
   if (body.vapiCallId) {
-    await supabase
-      .from("sessions")
-      .update({ vapi_call_id: body.vapiCallId })
-      .eq("id", sessionId);
+    patchData.vapi_call_id = body.vapiCallId;
   }
 
-  if (!body.vapiCallId && !body.appendContext?.trim()) {
-    return NextResponse.json(
-      { error: "Provide vapiCallId and/or appendContext" },
-      { status: 400 }
-    );
+  if (Object.keys(patchData).length > 0) {
+    await supabase.from("sessions").update(patchData).eq("id", sessionId);
   }
 
   return NextResponse.json({ success: true });

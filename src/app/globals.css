@@ -88,3 +88,20 @@ body {
 .animate-pulse-slow {
   animation: pulse-slow 3s ease-in-out infinite;
 }
+
+body.session-active-route .dashboard-shell-footer {
+  display: none;
+}
+
+/* Fallback when body class timing lags during hydration. */
+body:has([data-session-page="true"]) .dashboard-shell-footer {
+  display: none;
+}
+
+body.session-active-route .dashboard-shell-main {
+  padding-bottom: 1rem;
+}
+
+body:has([data-session-page="true"]) .dashboard-shell-main {
+  padding-bottom: 1rem;
+}

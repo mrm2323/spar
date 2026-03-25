@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Paperclip, Loader2, Check, Star, Send } from "lucide-react";
+import { Paperclip, Loader2, Check, Star, Send, MessageSquareText } from "lucide-react";
 import Vapi from "@vapi-ai/web";
 import { useUser } from "@clerk/nextjs";
 import { startPracticeReplaySession, trackEvent } from "@/lib/analytics";
@@ -15,6 +15,41 @@ type SessionStatus =
   | "feedback"
   | "error";
 type SpeakingState = "listening" | "kabir" | "idle";
+
+type LiveMessage = {
+  id: string;
+  role: "user" | "assistant" | "system";
+  source: "voice" | "typed" | "file" | "status";
+  content: string;
+};
+
+type ContextSummary = {
+  contextChars?: number;
+  files?: string[];
+};
+
+const SILENCE_NUDGE_SECONDS = 20;
+const SILENCE_AUTO_END_SECONDS = 30;
+
+function hasNegatedEndIntent(text: string): boolean {
+  return /\b(don['’]?t|do not|not now|keep going|continue)\b.*\b(end|stop|hang\s*up|finish)\b/i.test(
+    text
+  );
+}
+
+function hasEndIntent(text: string): boolean {
+  return /\b(end|stop|finish|wrap\s*up|hang\s*up)\b.*\b(session|call|conversation)?\b/i.test(
+    text
+  );
+}
+
+function hasImmediateEndIntent(text: string): boolean {
+  return /\b(end|stop|finish|hang\s*up)\b.*\b(now|right now|immediately|please)\b/i.test(text);
+}
+
+function hasEndConfirmation(text: string): boolean {
+  return /\b(yes|confirm|go ahead|do it|end now|stop now)\b/i.test(text);
+}
 
 export default function SessionPage() {
   const params = useParams<{ id: string }>();
@@ -43,9 +78,44 @@ export default function SessionPage() {
   const [feedbackSaving, setFeedbackSaving] = useState(false);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
   const [midContextDraft, setMidContextDraft] = useState("");
+  const [composerFocused, setComposerFocused] = useState(false);
   const [midContextSaving, setMidContextSaving] = useState(false);
   const [midContextSaved, setMidContextSaved] = useState(false);
+  const [liveMessages, setLiveMessages] = useState<LiveMessage[]>([]);
+  const [contextSummary, setContextSummary] = useState<ContextSummary | null>(null);
+  const [silenceBanner, setSilenceBanner] = useState<string | null>(null);
   const replayStartSentRef = useRef(false);
+  const lastUserActivityRef = useRef(Date.now());
+  const silenceNudgedRef = useRef(false);
+  const autoEndedForSilenceRef = useRef(false);
+  const pendingEndConfirmUntilRef = useRef<number | null>(null);
+  const endSessionRef = useRef<
+    ((reason?: "manual" | "silence_auto" | "user_voice_request") => Promise<void>) | null
+  >(null);
+
+  const appendLiveMessage = useCallback((message: Omit<LiveMessage, "id">) => {
+    setLiveMessages((prev) => [
+      ...prev.slice(-39),
+      {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        ...message,
+      },
+    ]);
+  }, []);
+
+  const markUserActivity = useCallback(() => {
+    lastUserActivityRef.current = Date.now();
+    silenceNudgedRef.current = false;
+    autoEndedForSilenceRef.current = false;
+    setSilenceBanner(null);
+  }, []);
+
+  useEffect(() => {
+    document.body.classList.add("session-active-route");
+    return () => {
+      document.body.classList.remove("session-active-route");
+    };
+  }, []);
 
   useEffect(() => {
     if (!id || !userLoaded || !user?.id || replayStartSentRef.current) return;
@@ -78,8 +148,12 @@ export default function SessionPage() {
       firstMessage?: string;
       maxDurationSeconds?: number;
       cap?: { sessionTimeMessage?: string };
+      contextSummary?: ContextSummary;
     };
     const { systemPrompt, firstMessage } = parsed;
+    if (parsed.contextSummary) {
+      setContextSummary(parsed.contextSummary);
+    }
 
     const sessionMaxDuration =
       typeof parsed.maxDurationSeconds === "number" && parsed.maxDurationSeconds > 0
@@ -96,6 +170,7 @@ export default function SessionPage() {
 
     vapi.on("call-start", async () => {
       setStatus("active");
+      markUserActivity();
       try {
         await vapi.increaseMicLevel(1.15);
       } catch {
@@ -107,8 +182,90 @@ export default function SessionPage() {
       if (timerRef.current) clearInterval(timerRef.current);
     });
 
-    vapi.on("speech-start", () => setSpeaking("kabir"));
-    vapi.on("speech-end", () => setSpeaking("listening"));
+    vapi.on("speech-start", () => {
+      setSpeaking("kabir");
+      markUserActivity();
+    });
+    vapi.on("speech-end", () => {
+      setSpeaking("listening");
+      // Start silence countdown after Kabir finishes, not during his turn.
+      markUserActivity();
+    });
+
+    vapi.on("message", (payload: unknown) => {
+      const body = (payload as { message?: Record<string, unknown> })?.message;
+      const row = (body || payload || {}) as Record<string, unknown>;
+      const roleRaw =
+        typeof row.role === "string"
+          ? row.role
+          : typeof row.speaker === "string"
+            ? row.speaker
+            : typeof row.from === "string"
+              ? row.from
+              : "";
+      const role = roleRaw.toLowerCase();
+      const textRaw =
+        typeof row.content === "string"
+          ? row.content
+          : typeof row.message === "string"
+            ? row.message
+            : typeof row.text === "string"
+              ? row.text
+              : "";
+      const text = textRaw.trim();
+      if (!text) return;
+
+      if (role.includes("assistant") || role.includes("bot") || role.includes("agent")) {
+        markUserActivity();
+        appendLiveMessage({ role: "assistant", source: "voice", content: text });
+        return;
+      }
+
+      if (role.includes("user") || role.includes("customer")) {
+        markUserActivity();
+        appendLiveMessage({ role: "user", source: "voice", content: text });
+        const now = Date.now();
+        const pendingUntil = pendingEndConfirmUntilRef.current;
+        const withinConfirmWindow = Boolean(pendingUntil && now < pendingUntil);
+
+        if (withinConfirmWindow && hasEndConfirmation(text) && !endingRef.current) {
+          pendingEndConfirmUntilRef.current = null;
+          setSilenceBanner("Confirmed. Ending this session now.");
+          void endSessionRef.current?.("user_voice_request");
+          return;
+        }
+
+        if (hasNegatedEndIntent(text)) {
+          pendingEndConfirmUntilRef.current = null;
+          setSilenceBanner("Okay, I will not end right now.");
+          return;
+        }
+
+        if (hasEndIntent(text) && !endingRef.current) {
+          if (hasImmediateEndIntent(text) || (withinConfirmWindow && hasEndConfirmation(text))) {
+            pendingEndConfirmUntilRef.current = null;
+            setSilenceBanner("Heard you. Ending this session now.");
+            void endSessionRef.current?.("user_voice_request");
+            return;
+          }
+
+          pendingEndConfirmUntilRef.current = now + 12000;
+          setSilenceBanner("Say 'end session now' to confirm, or keep talking to continue.");
+          const vapi = vapiRef.current;
+          if (vapi) {
+            vapi.send({
+              type: "add-message",
+              triggerResponseEnabled: true,
+              message: {
+                role: "system",
+                content:
+                  "User might want to end the call. Ask once for explicit confirmation. If they do not confirm, continue coaching.",
+              },
+            });
+          }
+        }
+      }
+    });
 
     vapi.on("error", (e: unknown) => {
       const errDetail =
@@ -141,13 +298,13 @@ export default function SessionPage() {
           "Hey. It's Kabir. What conversation are you looking forward to?",
         maxDurationSeconds: sessionMaxDuration,
         startSpeakingPlan: {
-          waitSeconds: 0.3,
+          waitSeconds: 0.85,
           smartEndpointingEnabled: true,
         },
         stopSpeakingPlan: {
-          numWords: 1,
-          voiceSeconds: 0.08,
-          backoffSeconds: 0.35,
+          numWords: 2,
+          voiceSeconds: 0.22,
+          backoffSeconds: 0.95,
         },
       })
       .then(async (call) => {
@@ -170,7 +327,13 @@ export default function SessionPage() {
       vapi.stop();
       vapiRef.current = null;
     };
-  }, [id, router, trustAcknowledged]);
+  }, [
+    id,
+    router,
+    trustAcknowledged,
+    appendLiveMessage,
+    markUserActivity,
+  ]);
 
   useEffect(() => {
     if (status === "active") {
@@ -180,6 +343,56 @@ export default function SessionPage() {
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [status]);
+
+  useEffect(() => {
+    if (status !== "active") return;
+    const interval = window.setInterval(() => {
+      if (endingRef.current || speaking === "kabir") return;
+      if (composerFocused || midContextDraft.trim().length > 0 || midContextSaving) {
+        markUserActivity();
+        return;
+      }
+      const idleSeconds = (Date.now() - lastUserActivityRef.current) / 1000;
+
+      if (idleSeconds >= SILENCE_NUDGE_SECONDS && !silenceNudgedRef.current) {
+        silenceNudgedRef.current = true;
+        setSilenceBanner("Still there? I will end this session in 10 seconds if it stays silent.");
+        appendLiveMessage({
+          role: "system",
+          source: "status",
+          content: "Silence detected: we will wrap in 10 seconds unless you continue.",
+        });
+        const vapi = vapiRef.current;
+        if (vapi) {
+          vapi.send({
+            type: "add-message",
+            triggerResponseEnabled: true,
+            message: {
+              role: "system",
+              content:
+                "The user has been silent for a while. Give a very short and kind nudge and mention the session will auto-end after 30 seconds of silence.",
+            },
+          });
+        }
+      }
+
+      if (idleSeconds >= SILENCE_AUTO_END_SECONDS && !autoEndedForSilenceRef.current) {
+        autoEndedForSilenceRef.current = true;
+        setSilenceBanner("Ending now after 30 seconds of silence.");
+        void endSessionRef.current?.("silence_auto");
+      }
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [
+    status,
+    speaking,
+    appendLiveMessage,
+    composerFocused,
+    midContextDraft,
+    midContextSaving,
+    markUserActivity,
+  ]);
 
   const handleFileUpload = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -230,6 +443,7 @@ export default function SessionPage() {
             data.text.length > 14_000
               ? `${data.text.slice(0, 14_000)}\n\n[Truncated — file was long]`
               : data.text;
+          markUserActivity();
           // User-role + triggerResponse so the assistant actually speaks; system-only
           // injections often never get a spoken reply in live calls.
           vapi.send({
@@ -241,6 +455,24 @@ export default function SessionPage() {
                 `[The user shared a file during this call: "${file.name}". Here is the extracted text. Acknowledge briefly that you received it, reference one or two relevant details if useful, then continue helping with their conversation.]\n\n` +
                 excerpt,
             },
+          });
+          appendLiveMessage({
+            role: "system",
+            source: "file",
+            content: `Accepted file \"${file.name}\". Kabir has it in this session's context.`,
+          });
+          await fetch(`/api/session/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              appendContext: `[File shared during session: ${file.name}]\n${String(excerpt).slice(0, 4000)}`,
+              appendTranscriptEntry: {
+                role: "user",
+                source: "file",
+                time: new Date().toISOString(),
+                content: `[Shared file: ${file.name}]`,
+              },
+            }),
           });
           setAttachStatus("done");
           trackEvent("attachment_upload_succeeded", {
@@ -264,16 +496,17 @@ export default function SessionPage() {
 
       if (fileInputRef.current) fileInputRef.current.value = "";
     },
-    [id]
+    [id, appendLiveMessage, markUserActivity]
   );
 
-  const endSession = useCallback(async () => {
+  const endSession = useCallback(async (reason: "manual" | "silence_auto" | "user_voice_request" = "manual") => {
     if (endingRef.current) return;
     endingRef.current = true;
     trackEvent("session_end_clicked", {
       session_id: id,
       speaking_state: speaking,
       elapsed_seconds: elapsed,
+      end_reason: reason,
     });
     setEnding(true);
     setSpeaking("idle");
@@ -302,6 +535,7 @@ export default function SessionPage() {
 
       trackEvent("session_end_succeeded", {
         session_id: id,
+        end_reason: reason,
       });
 
       sessionStorage.removeItem(`spar_session_${id}`);
@@ -311,6 +545,7 @@ export default function SessionPage() {
       console.error("End session failed:", error);
       trackEvent("session_end_failed", {
         session_id: id,
+        end_reason: reason,
         error: error instanceof Error ? error.message : "unknown",
       });
       endingRef.current = false;
@@ -321,6 +556,10 @@ export default function SessionPage() {
       );
     }
   }, [id, speaking, elapsed]);
+
+  useEffect(() => {
+    endSessionRef.current = endSession;
+  }, [endSession]);
 
   const continueToNotes = useCallback(() => {
     if (!id) return;
@@ -402,6 +641,7 @@ export default function SessionPage() {
     setMidContextSaved(false);
     try {
       const draft = midContextDraft.trim();
+      markUserActivity();
       const vapi = vapiRef.current;
       if (vapi) {
         vapi.send({
@@ -413,10 +653,19 @@ export default function SessionPage() {
           },
         });
       }
+      appendLiveMessage({ role: "user", source: "typed", content: draft });
       const res = await fetch(`/api/session/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ appendContext: draft }),
+        body: JSON.stringify({
+          appendContext: draft,
+          appendTranscriptEntry: {
+            role: "user",
+            content: draft,
+            source: "typed",
+            time: new Date().toISOString(),
+          },
+        }),
       });
       if (res.ok) {
         setMidContextSaved(true);
@@ -426,7 +675,7 @@ export default function SessionPage() {
     } finally {
       setMidContextSaving(false);
     }
-  }, [id, midContextDraft]);
+  }, [id, midContextDraft, appendLiveMessage, markUserActivity]);
 
   if (status === "error") {
     return (
@@ -577,7 +826,10 @@ export default function SessionPage() {
   }
 
   return (
-    <div className="flex min-h-[80vh] flex-col items-center justify-center pb-[min(22rem,40vh)]">
+    <div
+      data-session-page="true"
+      className="flex min-h-[80vh] flex-col items-center justify-center pb-[min(34rem,58vh)] sm:pb-[min(30rem,50vh)]"
+    >
       {status === "connecting" && (
         <div className="text-center">
           <div className="mb-4 flex justify-center gap-1">
@@ -619,8 +871,46 @@ export default function SessionPage() {
           <p className="mt-2 font-mono text-sm text-slate-400">
             {formatTime(elapsed)}
           </p>
+          {contextSummary ? (
+            <p className="mt-2 text-center text-[11px] text-emerald-300/85">
+              Context loaded: {contextSummary.contextChars || 0} chars
+              {Array.isArray(contextSummary.files) && contextSummary.files.length > 0
+                ? `, ${contextSummary.files.length} file${contextSummary.files.length === 1 ? "" : "s"}`
+                : ""}
+            </p>
+          ) : null}
           {capHint ? (
             <p className="mt-2 text-xs text-cyan-300/80">{capHint}</p>
+          ) : null}
+          {silenceBanner ? (
+            <p className="mt-2 text-xs text-amber-300/90">{silenceBanner}</p>
+          ) : null}
+
+          {liveMessages.length > 0 ? (
+            <div className="mt-5 w-[min(100vw-1.25rem,46rem)] rounded-xl border border-slate-700/60 bg-slate-950/55 px-3 py-3 backdrop-blur">
+              <div className="mb-2 flex items-center gap-2 text-xs text-slate-400">
+                <MessageSquareText className="h-3.5 w-3.5" />
+                Conversation log
+              </div>
+              <div className="max-h-36 space-y-2 overflow-y-auto pr-1">
+                {liveMessages.slice(-8).map((m) => (
+                  <div key={m.id} className="text-xs leading-relaxed text-slate-200">
+                    <span
+                      className={`mr-2 uppercase tracking-wider ${
+                        m.role === "assistant"
+                          ? "text-cyan-300"
+                          : m.role === "user"
+                            ? "text-emerald-300"
+                            : "text-amber-300"
+                      }`}
+                    >
+                      {m.role === "assistant" ? "Kabir" : m.role === "user" ? "You" : "System"}
+                    </span>
+                    <span>{m.content}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
           ) : null}
 
           <input
@@ -631,13 +921,22 @@ export default function SessionPage() {
             className="hidden"
           />
 
-          <div className="fixed bottom-0 left-1/2 z-40 w-[min(100vw-1rem,44rem)] -translate-x-1/2 px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2">
+          <div className="fixed bottom-0 left-1/2 z-40 w-[min(100vw-0.75rem,44rem)] -translate-x-1/2 px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2">
             <div className="rounded-xl border border-slate-700/60 bg-slate-950/95 p-3 shadow-lg backdrop-blur">
-              <div className="flex items-end gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
                 <textarea
                   value={midContextDraft}
-                  onChange={(e) => setMidContextDraft(e.target.value)}
+                  onFocus={() => {
+                    setComposerFocused(true);
+                    markUserActivity();
+                  }}
+                  onBlur={() => setComposerFocused(false)}
+                  onChange={(e) => {
+                    setMidContextDraft(e.target.value);
+                    markUserActivity();
+                  }}
                   onKeyDown={(e) => {
+                    markUserActivity();
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
                       void saveMidSessionContext();
@@ -645,13 +944,13 @@ export default function SessionPage() {
                   }}
                   placeholder="Message Kabir with extra context..."
                   rows={2}
-                  className="max-h-32 min-h-[44px] flex-1 resize-y rounded-lg border border-slate-700/80 bg-slate-900/80 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 outline-none focus:border-cyan-500/50"
+                  className="max-h-32 min-h-[44px] w-full flex-1 resize-y rounded-lg border border-slate-700/80 bg-slate-900/80 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 outline-none focus:border-cyan-500/50"
                 />
                 <button
                   type="button"
                   disabled={midContextSaving || !midContextDraft.trim()}
                   onClick={() => void saveMidSessionContext()}
-                  className="inline-flex h-11 shrink-0 items-center gap-1 rounded-lg bg-cyan-600 px-3 text-sm font-medium text-white transition-colors hover:bg-cyan-500 disabled:opacity-40"
+                  className="inline-flex h-11 w-full shrink-0 items-center justify-center gap-1 rounded-lg bg-cyan-600 px-3 text-sm font-medium text-white transition-colors hover:bg-cyan-500 disabled:opacity-40 sm:w-auto"
                 >
                   {midContextSaving ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -661,13 +960,13 @@ export default function SessionPage() {
                   Send
                 </button>
               </div>
-              <div className="mt-3 flex flex-wrap items-center justify-center gap-3">
+              <div className="mt-3 flex flex-col items-stretch justify-center gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={attachStatus === "processing"}
                   title="Add a file to context"
-                  className="inline-flex min-w-[10rem] items-center justify-center gap-2 rounded-full border border-slate-600/60 bg-slate-900/50 px-4 py-2 text-xs font-medium text-slate-200 transition-colors hover:border-cyan-500/40 hover:bg-slate-800/60 disabled:opacity-50"
+                  className="inline-flex w-full min-w-[10rem] items-center justify-center gap-2 rounded-full border border-slate-600/60 bg-slate-900/50 px-4 py-2 text-xs font-medium text-slate-200 transition-colors hover:border-cyan-500/40 hover:bg-slate-800/60 disabled:opacity-50 sm:w-auto"
                 >
                   {attachStatus === "processing" ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -684,9 +983,9 @@ export default function SessionPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={endSession}
+                  onClick={() => void endSession("manual")}
                   disabled={ending}
-                  className="rounded-full bg-rose-500/90 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-70"
+                  className="w-full rounded-full bg-rose-500/90 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto"
                 >
                   {ending ? "Ending…" : "End session"}
                 </button>
@@ -704,7 +1003,7 @@ export default function SessionPage() {
           </div>
 
           {attachError ? (
-            <p className="fixed bottom-[11.5rem] left-1/2 z-40 max-w-md -translate-x-1/2 px-4 text-center text-xs text-red-400">
+            <p className="fixed bottom-[13.2rem] left-1/2 z-40 max-w-md -translate-x-1/2 px-4 text-center text-xs text-red-400 sm:bottom-[11.8rem]">
               {attachError}
             </p>
           ) : null}

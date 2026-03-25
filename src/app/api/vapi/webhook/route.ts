@@ -89,6 +89,61 @@ function sanitizeTranscript(transcript: unknown): unknown {
   return cleaned;
 }
 
+function normalizeTranscriptForMerge(transcript: unknown): SanitizedTranscriptRow[] {
+  if (Array.isArray(transcript)) {
+    return transcript
+      .map((row) => {
+        const item = row as Record<string, unknown>;
+        const role = typeof item.role === "string" ? item.role : "";
+        const content =
+          typeof item.content === "string"
+            ? item.content
+            : typeof item.message === "string"
+              ? item.message
+              : typeof item.text === "string"
+                ? item.text
+                : "";
+        const trimmed = content.trim();
+        if (!trimmed) return null;
+        return {
+          role,
+          content: trimmed,
+          time: item.time,
+          endTime: item.endTime,
+          secondsFromStart: item.secondsFromStart,
+        };
+      })
+      .filter((row): row is SanitizedTranscriptRow => row !== null);
+  }
+  if (typeof transcript === "string") {
+    try {
+      const parsed = JSON.parse(transcript) as unknown;
+      return normalizeTranscriptForMerge(parsed);
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function mergeTranscripts(existing: unknown, incoming: unknown): SanitizedTranscriptRow[] {
+  const all = [
+    ...normalizeTranscriptForMerge(existing),
+    ...normalizeTranscriptForMerge(incoming),
+  ];
+  const seen = new Set<string>();
+  const merged: SanitizedTranscriptRow[] = [];
+
+  for (const row of all) {
+    const key = `${row.role}::${row.content}::${String(row.time ?? "")}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(row);
+  }
+
+  return merged.slice(-1200);
+}
+
 function toMemoryMessages(transcript: unknown): Array<{ role: string; content: string }> {
   if (!Array.isArray(transcript)) return [];
   return transcript
@@ -320,13 +375,13 @@ export async function POST(req: Request) {
                 : "Hey. It's Kabir. What conversation are you looking forward to?",
           maxDurationSeconds: effectiveDurationSeconds,
           startSpeakingPlan: {
-            waitSeconds: 0.6,
+            waitSeconds: 1.0,
             smartEndpointingEnabled: true,
           },
           stopSpeakingPlan: {
-            numWords: 1,
-            voiceSeconds: 0.2,
-            backoffSeconds: 1.5,
+            numWords: 2,
+            voiceSeconds: 0.28,
+            backoffSeconds: 1.8,
           },
         },
       });
@@ -353,12 +408,31 @@ export async function POST(req: Request) {
       );
       if (!callId) break;
 
-      const { data: session } = await supabase
+      const { data: existingSession } = await supabase
         .from("sessions")
-        .update({ transcript })
+        .select("id, user_id, transcript")
         .eq("vapi_call_id", callId)
-        .select("id, user_id")
-        .single();
+        .maybeSingle();
+
+      let session =
+        existingSession && existingSession.id
+          ? { id: existingSession.id, user_id: existingSession.user_id }
+          : null;
+
+      const mergedTranscript = mergeTranscripts(
+        existingSession?.transcript,
+        transcript
+      );
+
+      if (existingSession?.id) {
+        const { data: updatedSession } = await supabase
+          .from("sessions")
+          .update({ transcript: mergedTranscript })
+          .eq("id", existingSession.id)
+          .select("id, user_id")
+          .single();
+        session = updatedSession || session;
+      }
 
       if (session) {
         console.log(
@@ -393,8 +467,7 @@ export async function POST(req: Request) {
 
             const generated = await generateKabirNotes(session.id, canonicalUserId);
 
-            const transcriptText =
-              typeof transcript === "string" ? transcript : JSON.stringify(transcript);
+            const transcriptText = JSON.stringify(mergedTranscript);
             const kabirNotesText = generated?.notes
               ? formatKabirNotesForMemory(generated.notes)
               : "Kabir notes were unavailable at memory-save time.";
@@ -470,7 +543,7 @@ Last discussed: ${new Date().toISOString().split("T")[0]}`;
               }
             }
 
-            const extracted = toMemoryMessages(transcript);
+            const extracted = toMemoryMessages(mergedTranscript);
             const memoryEnabled = await getMemoryPreference(canonicalUserId);
             if (memoryEnabled && extracted.length > 0) {
               await memoryService.extractAndRemember(canonicalUserId, extracted);
