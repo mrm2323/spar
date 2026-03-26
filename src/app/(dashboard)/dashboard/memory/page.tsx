@@ -10,6 +10,7 @@ import {
   Lock,
   Target,
 } from "lucide-react";
+import { UnderstandingMap } from "@/components/UnderstandingMap";
 
 type PatternCard = {
   name: string;
@@ -264,59 +265,6 @@ export default function MemoryDashboardPage() {
     return `Built from ${n} conversations. Updated after every session.`;
   }, [sessionCount]);
 
-  const insightScores = useMemo(() => {
-    const consistency = Math.min(100, Math.max(8, sessionCount * 12));
-    const patternClarity = Math.min(
-      100,
-      patterns.length === 0
-        ? 18
-        : patterns.reduce((acc, p) => acc + Math.min(22, p.sessionCount * 5), 8)
-    );
-    const peopleDepth = Math.min(
-      100,
-      people.length === 0
-        ? 10
-        : people.length * 16 + people.filter((p) => p.relationship).length * 8
-    );
-    const progressedGoals = goalEntries.filter(
-      (g) => typeof g.metadata?.kabirNoticedAt === "string" && g.metadata.kabirNoticedAt
-    ).length;
-    const goalFollowThrough =
-      goalEntries.length === 0
-        ? 12
-        : Math.min(100, Math.round((progressedGoals / goalEntries.length) * 100));
-
-    return [
-      {
-        key: "consistency",
-        label: "Conversation consistency",
-        value: consistency,
-        detail: `${sessionCount} completed session${sessionCount === 1 ? "" : "s"}`,
-      },
-      {
-        key: "patterns",
-        label: "Pattern clarity",
-        value: patternClarity,
-        detail: `${patterns.length} communication pattern${patterns.length === 1 ? "" : "s"} tracked`,
-      },
-      {
-        key: "people",
-        label: "People context depth",
-        value: peopleDepth,
-        detail: `${people.length} person${people.length === 1 ? "" : "s"} in memory`,
-      },
-      {
-        key: "goals",
-        label: "Goal follow-through",
-        value: goalFollowThrough,
-        detail:
-          goalEntries.length === 0
-            ? "No goals added yet"
-            : `${progressedGoals}/${goalEntries.length} goals show progress`,
-      },
-    ];
-  }, [sessionCount, patterns, people, goalEntries]);
-
   return (
     <div className="mx-auto max-w-3xl space-y-10 pb-16 text-[#E2E8F0]">
       {/* HEADER */}
@@ -337,35 +285,12 @@ export default function MemoryDashboardPage() {
       </header>
 
       {/* SECTION 0 — UNDERSTANDING MAP */}
-      <section className={`${CARD} p-6`}>
-        <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-cyan-400/80">
-          Kabir understanding map
-        </h2>
-        <p className="mt-2 text-xs text-slate-500">
-          A live signal of how much context Kabir has built across your sessions.
-        </p>
-
-        <div className="mt-5 grid gap-3 sm:grid-cols-2">
-          {insightScores.map((item) => (
-            <div
-              key={item.key}
-              className="rounded-lg border border-slate-700/50 bg-slate-950/35 p-3"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-xs font-medium text-slate-200">{item.label}</p>
-                <span className="font-mono text-[11px] text-cyan-300">{item.value}%</span>
-              </div>
-              <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-cyan-500/80 to-emerald-400/80 transition-all"
-                  style={{ width: `${item.value}%` }}
-                />
-              </div>
-              <p className="mt-2 text-[11px] text-slate-500">{item.detail}</p>
-            </div>
-          ))}
-        </div>
-      </section>
+      <UnderstandingMap
+        sessionCount={sessionCount}
+        patterns={patterns}
+        people={people}
+        goalEntries={goalEntries}
+      />
 
       {/* SECTION 1 — YOU AS A COMMUNICATOR */}
       <section className={`${CARD} p-6 sm:p-8`}>

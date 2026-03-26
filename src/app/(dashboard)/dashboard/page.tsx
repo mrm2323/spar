@@ -12,6 +12,7 @@ import {
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import { startPracticeReplaySession, trackEvent } from "@/lib/analytics";
+import { UnderstandingMap } from "@/components/UnderstandingMap";
 
 interface PastSession {
   id: string;
@@ -76,6 +77,9 @@ function DashboardInner() {
   const [capStatus, setCapStatus] = useState<SessionCapStatus | null>(null);
   const [memorySnippet, setMemorySnippet] = useState<string | null>(null);
   const [knownPeople, setKnownPeople] = useState<string[]>([]);
+  const [patterns, setPatterns] = useState<Array<{ name: string; sessionCount: number }>>([]);
+  const [people, setPeople] = useState<Array<{ relationship?: string }>>([]);
+  const [goalEntries, setGoalEntries] = useState<Array<{ metadata?: { kabirNoticedAt?: string } }>>([]);
   // const [phone, setPhone] = useState("");
   // const [phoneSaved, setPhoneSaved] = useState(false);
   // const [linkedPhone, setLinkedPhone] = useState<string | null>(null);
@@ -141,12 +145,26 @@ function DashboardInner() {
   }, [searchParams, router]);
 
   useEffect(() => {
-    fetch("/api/sessions")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.sessions) setSessions(data.sessions);
-        if (data.pattern) setPattern(data.pattern);
-        if (data.cap) setCapStatus(data.cap);
+    Promise.all([
+      fetch("/api/sessions").then((r) => r.json()),
+      fetch("/api/memory/profile").then((r) => r.json().catch(() => ({}))),
+      fetch("/api/memory/people").then((r) => r.json().catch(() => ({}))),
+      fetch("/api/memory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "list", limit: 60 }),
+      }).then((r) => r.json().catch(() => ({}))),
+    ])
+      .then(([sessionsData, profileData, peopleData, memoryData]) => {
+        if (sessionsData.sessions) setSessions(sessionsData.sessions);
+        if (sessionsData.pattern) setPattern(sessionsData.pattern);
+        if (sessionsData.cap) setCapStatus(sessionsData.cap);
+        if (Array.isArray(profileData.patterns)) setPatterns(profileData.patterns);
+        if (Array.isArray(peopleData.people)) setPeople(peopleData.people);
+        const goals = (memoryData.memories || []).filter(
+          (e: any) => e.metadata?.category === "goals"
+        );
+        if (Array.isArray(goals)) setGoalEntries(goals);
       })
       .catch(() => {});
 
@@ -567,6 +585,18 @@ function DashboardInner() {
           </p>
         )}
       </div>
+
+      {/* Understanding Map — shows if any data exists */}
+      {(sessions.length > 0 || patterns.length > 0 || people.length > 0 || goalEntries.length > 0) && (
+        <div className="mt-10 border-t border-slate-800/70 pt-10">
+          <UnderstandingMap
+            sessionCount={sessions.length}
+            patterns={patterns}
+            people={people}
+            goalEntries={goalEntries}
+          />
+        </div>
+      )}
 
       {/* Pattern — 3+ sessions */}
       {pattern && pattern.total_sessions >= 3 && (
