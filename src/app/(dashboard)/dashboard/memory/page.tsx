@@ -10,7 +10,6 @@ import {
   Lock,
   Target,
 } from "lucide-react";
-import { UnderstandingMap } from "@/components/UnderstandingMap";
 
 type PatternCard = {
   name: string;
@@ -283,14 +282,6 @@ export default function MemoryDashboardPage() {
           </p>
         ) : null}
       </header>
-
-      {/* SECTION 0 — UNDERSTANDING MAP */}
-      <UnderstandingMap
-        sessionCount={sessionCount}
-        patterns={patterns}
-        people={people}
-        goalEntries={goalEntries}
-      />
 
       {/* SECTION 1 — YOU AS A COMMUNICATOR */}
       <section className={`${CARD} p-6 sm:p-8`}>
