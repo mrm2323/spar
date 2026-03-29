@@ -44,14 +44,24 @@ type MemoryEntry = {
   };
 };
 
+function startOfLocalDay(t: number): number {
+  const x = new Date(t);
+  x.setHours(0, 0, 0, 0);
+  return x.getTime();
+}
+
+/** Calendar-relative "Today" / "Yesterday" / N days ago — not rolling 24h windows. */
 function formatRelativeDiscussed(iso: string | null): string {
   if (!iso) return "Recently";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "Recently";
-  const diff = (Date.now() - d.getTime()) / 86_400_000;
-  if (diff < 1) return "Today";
-  if (diff < 2) return "Yesterday";
-  if (diff < 7) return `${Math.floor(diff)} days ago`;
+  const now = Date.now();
+  const dayDiff = Math.round(
+    (startOfLocalDay(now) - startOfLocalDay(d.getTime())) / 86_400_000
+  );
+  if (dayDiff === 0) return "Today";
+  if (dayDiff === 1) return "Yesterday";
+  if (dayDiff > 1 && dayDiff < 7) return `${dayDiff} days ago`;
   return d.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
@@ -59,11 +69,13 @@ function formatRelativeDiscussed(iso: string | null): string {
   });
 }
 
+/** First sentence or truncated line (no lookbehind regex — broader browser support). */
 function narrativeLine(summary: string): string {
   const s = summary.replace(/\s+/g, " ").trim();
   if (!s) return "";
-  const parts = s.split(/(?<=[.!?])\s+/);
-  const first = parts[0]?.trim() ?? "";
+  const end = s.search(/[.!?](\s|$)/);
+  const first =
+    end === -1 ? s : s.slice(0, end + 1).trim();
   if (first.length > 0 && first.length <= 240) return first;
   return s.length > 200 ? `${s.slice(0, 197).trim()}…` : s;
 }
@@ -264,6 +276,82 @@ export default function MemoryDashboardPage() {
     return `Built from ${n} conversations. Updated after every session.`;
   }, [sessionCount]);
 
+  /**
+   * "Understanding map" percentages — each is 0–100 on a defined scale (not arbitrary multiples).
+   */
+  const insightScores = useMemo(() => {
+    const SESSIONS_FOR_FULL = 25;
+    const consistency =
+      sessionCount <= 0
+        ? 0
+        : Math.min(
+            100,
+            Math.round(
+              (Math.min(sessionCount, SESSIONS_FOR_FULL) / SESSIONS_FOR_FULL) * 100
+            )
+          );
+
+    const patternClarity =
+      patterns.length === 0
+        ? Math.min(24, sessionCount * 4)
+        : Math.min(100, Math.round((patterns.length / 4) * 100));
+
+    const PEOPLE_FOR_FULL = 5;
+    const peopleDepth =
+      people.length === 0
+        ? Math.min(20, sessionCount * 3)
+        : Math.min(
+            100,
+            Math.round(
+              (Math.min(people.length, PEOPLE_FOR_FULL) / PEOPLE_FOR_FULL) * 100
+            )
+          );
+
+    const progressedGoals = goalEntries.filter(
+      (g) => typeof g.metadata?.kabirNoticedAt === "string" && g.metadata.kabirNoticedAt
+    ).length;
+    const goalFollowThrough =
+      goalEntries.length === 0
+        ? 0
+        : Math.min(
+            100,
+            Math.round((progressedGoals / goalEntries.length) * 100)
+          );
+
+    return [
+      {
+        key: "consistency",
+        label: "Conversation consistency",
+        value: consistency,
+        detail: `${sessionCount} completed session${sessionCount === 1 ? "" : "s"} · scale fills toward 25 sessions`,
+      },
+      {
+        key: "patterns",
+        label: "Pattern clarity",
+        value: patternClarity,
+        detail:
+          patterns.length === 0
+            ? "No patterns yet"
+            : `${patterns.length} of up to 4 pattern${patterns.length === 1 ? "" : "s"} surfaced`,
+      },
+      {
+        key: "people",
+        label: "People context depth",
+        value: peopleDepth,
+        detail: `${people.length} person${people.length === 1 ? "" : "s"} · scale fills toward 5`,
+      },
+      {
+        key: "goals",
+        label: "Goal follow-through",
+        value: goalFollowThrough,
+        detail:
+          goalEntries.length === 0
+            ? "No goals added yet"
+            : `${progressedGoals}/${goalEntries.length} goals with progress flagged`,
+      },
+    ];
+  }, [sessionCount, patterns, people, goalEntries]);
+
   return (
     <div className="mx-auto max-w-3xl space-y-10 pb-16 text-[#E2E8F0]">
       {/* HEADER */}
@@ -282,6 +370,37 @@ export default function MemoryDashboardPage() {
           </p>
         ) : null}
       </header>
+
+      {/* SECTION 0 — UNDERSTANDING MAP */}
+      <section className={`${CARD} p-6`}>
+        <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-cyan-400/80">
+          Kabir understanding map
+        </h2>
+        <p className="mt-2 text-xs text-slate-500">
+          A live signal of how much context Kabir has built across your sessions.
+        </p>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          {insightScores.map((item) => (
+            <div
+              key={item.key}
+              className="rounded-lg border border-slate-700/50 bg-slate-950/35 p-3"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-medium text-slate-200">{item.label}</p>
+                <span className="font-mono text-[11px] text-cyan-300">{item.value}%</span>
+              </div>
+              <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-cyan-500/80 to-emerald-400/80 transition-all"
+                  style={{ width: `${item.value}%` }}
+                />
+              </div>
+              <p className="mt-2 text-[11px] text-slate-500">{item.detail}</p>
+            </div>
+          ))}
+        </div>
+      </section>
 
       {/* SECTION 1 — YOU AS A COMMUNICATOR */}
       <section className={`${CARD} p-6 sm:p-8`}>
@@ -335,7 +454,14 @@ export default function MemoryDashboardPage() {
                 >
                   {p.status === "improving" ? "Improving" : "Persistent"}
                   <span className="ml-2 font-normal text-slate-500">
-                    · seen across ~{p.sessionCount} sessions
+                    {sessionCount > 0 ? (
+                      <>
+                        · seen in {Math.min(p.sessionCount, sessionCount)} of {sessionCount}{" "}
+                        session{sessionCount === 1 ? "" : "s"}
+                      </>
+                    ) : (
+                      <>· from your coaching history</>
+                    )}
                   </span>
                 </p>
               </div>

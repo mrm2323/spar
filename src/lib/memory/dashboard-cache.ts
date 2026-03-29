@@ -19,28 +19,42 @@ export type DashboardCachePayload = {
   generatedAt: string;
 };
 
-async function getInvalidationKey(
+/**
+ * Fingerprint for cache invalidation: completed-session count + latest activity time.
+ * Latest time = max per row of (ended_at, created_at) so null ended_at still invalidates correctly.
+ */
+async function getSessionFingerprint(
   supabase: SupabaseClient,
   userId: string
-): Promise<string> {
+): Promise<{ invalidationKey: string; sessionCount: number }> {
   const { count } = await supabase
     .from("sessions")
     .select("*", { count: "exact", head: true })
     .eq("user_id", userId)
     .eq("status", "completed");
 
-  const { data: last } = await supabase
+  const sessionCount = typeof count === "number" ? count : 0;
+
+  const { data: rows } = await supabase
     .from("sessions")
-    .select("ended_at")
+    .select("ended_at, created_at")
     .eq("user_id", userId)
     .eq("status", "completed")
-    .order("ended_at", { ascending: false, nullsFirst: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(120);
 
-  const n = typeof count === "number" ? count : 0;
-  const t = last?.ended_at != null ? String(last.ended_at) : "";
-  return `${n}|${t}`;
+  let latestMs = 0;
+  for (const r of rows ?? []) {
+    const e = r.ended_at ? new Date(String(r.ended_at)).getTime() : 0;
+    const c = r.created_at ? new Date(String(r.created_at)).getTime() : 0;
+    const m = Math.max(e, c);
+    if (m > latestMs) latestMs = m;
+  }
+  const t = latestMs > 0 ? new Date(latestMs).toISOString() : "";
+
+  return {
+    invalidationKey: `${sessionCount}|${t}`,
+    sessionCount,
+  };
 }
 
 async function buildCorpus(
@@ -78,10 +92,14 @@ function openaiClient(): OpenAI {
   return new OpenAI({ apiKey: key });
 }
 
-async function generatePortraitAndPatterns(corpus: string): Promise<{
+async function generatePortraitAndPatterns(
+  corpus: string,
+  completedSessionCount: number
+): Promise<{
   portrait: string;
   patterns: PatternCard[];
 }> {
+  const maxPatternSessions = Math.min(50, Math.max(0, completedSessionCount));
   const openai = openaiClient();
   const response = await openai.chat.completions.create({
     model: "gpt-4o-mini",
@@ -95,21 +113,26 @@ async function generatePortraitAndPatterns(corpus: string): Promise<{
   "patterns": [
     {
       "name": "THE APOLOGY REFLEX",
-      "description": "One line: what Kabir has noticed and how often (e.g. 'in 4 of 5 sessions').",
+      "description": "One line: what Kabir has noticed and how often (e.g. 'in 3 of 4 sessions').",
       "status": "improving",
-      "sessionCount": 4
+      "sessionCount": 3
     }
   ]
 }
 Rules:
 - patterns: 3-4 items max, uppercase-style labels (THE OVER-EXPLAIN, THE CONFIDENCE DROP).
 - status is either "improving" or "persistent".
-- sessionCount: integer 1-10 (estimate if unknown).
+- sessionCount per pattern: integer from 1 to at most the user's completed practice session count (never invent more sessions than they have actually completed).
 - If the corpus is sparse, use a warm placeholder portrait and 0-2 patterns.`,
       },
       {
         role: "user",
-        content: `Everything Kabir knows about this person from sessions and memory:\n\n${corpus || "(empty)"}`,
+        content: `Completed practice sessions (fact): ${completedSessionCount}
+Pattern sessionCount must be integers from 0 to ${maxPatternSessions} (0 only if no sessions yet).
+
+Everything Kabir knows about this person from sessions and memory:
+
+${corpus || "(empty)"}`,
       },
     ],
     temperature: 0.65,
@@ -143,11 +166,19 @@ Rules:
       if (!name || !description) continue;
       const status =
         o.status === "improving" ? "improving" : "persistent";
-      const sessionCount =
+      const rawSc =
         typeof o.sessionCount === "number" && Number.isFinite(o.sessionCount)
-          ? Math.round(Math.min(10, Math.max(1, o.sessionCount)))
-          : 2;
-      patterns.push({ name, description, status, sessionCount });
+          ? Math.round(o.sessionCount)
+          : completedSessionCount > 0
+            ? 1
+            : 0;
+      const upper = Math.max(0, completedSessionCount);
+      const capped =
+        upper === 0
+          ? 0
+          : Math.min(Math.max(1, rawSc), upper);
+      if (capped === 0) continue;
+      patterns.push({ name, description, status, sessionCount: capped });
     }
   }
 
@@ -160,8 +191,10 @@ export async function getOrBuildDashboardCache(
   DashboardCachePayload & { sessionCount: number; cacheHit: boolean }
 > {
   const supabase = createSupabaseAdmin();
-  const invalidationKey = await getInvalidationKey(supabase, userId);
-  const sessionCount = Number.parseInt(invalidationKey.split("|")[0] ?? "0", 10) || 0;
+  const { invalidationKey, sessionCount } = await getSessionFingerprint(
+    supabase,
+    userId
+  );
 
   const { data: row } = await supabase
     .from("user_memory_cache")
@@ -175,9 +208,20 @@ export async function getOrBuildDashboardCache(
     typeof row.profile_text === "string" &&
     row.profile_text.trim().length > 0
   ) {
-    const patterns = Array.isArray(row.patterns_json)
+    const rawPatterns = Array.isArray(row.patterns_json)
       ? (row.patterns_json as PatternCard[])
       : [];
+    const upper = Math.max(0, sessionCount);
+    const patterns = rawPatterns.map((p) => ({
+      ...p,
+      sessionCount:
+        upper === 0
+          ? 0
+          : Math.min(
+              Math.max(1, p.sessionCount),
+              upper
+            ),
+    })).filter((p) => p.sessionCount > 0);
     return {
       profileText: row.profile_text,
       patterns,
@@ -189,7 +233,10 @@ export async function getOrBuildDashboardCache(
   }
 
   const corpus = await buildCorpus(userId, supabase);
-  const { portrait, patterns } = await generatePortraitAndPatterns(corpus);
+  const { portrait, patterns } = await generatePortraitAndPatterns(
+    corpus,
+    sessionCount
+  );
 
   const now = new Date().toISOString();
   const { error: upsertErr } = await supabase.from("user_memory_cache").upsert(
