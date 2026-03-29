@@ -16,7 +16,7 @@ export default function SignUpPage() {
             headerSubtitle: "text-zinc-400",
             formFieldLabel: "text-zinc-300",
             formFieldInput: "bg-zinc-800 border-zinc-700 text-white",
-            footerActionLink: "text-amber-500 hover:text-amber-400",
+            footerActionLink: "text-cyan-500 hover:text-violet-400",
             formButtonPrimary:
               "bg-white text-zinc-950 hover:bg-zinc-200",
           },

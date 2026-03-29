@@ -48,12 +48,15 @@ export async function GET() {
   const list = sessions || [];
   const sessionIds = list.map((s) => s.id);
 
-  const reportBySession: Record<string, { summary: string }> = {};
+  const reportBySession: Record<
+    string,
+    { summary: string; kabirTake?: string | null }
+  > = {};
 
   if (sessionIds.length > 0) {
     const { data: reports } = await supabase
       .from("forensics_reports")
-      .select("session_id, summary, created_at")
+      .select("session_id, summary, moments, created_at")
       .in("session_id", sessionIds)
       .order("created_at", { ascending: false });
 
@@ -61,8 +64,14 @@ export async function GET() {
       for (const r of reports) {
         const sid = r.session_id as string;
         if (!reportBySession[sid]) {
+          const moments = r.moments as Record<string, unknown> | null | undefined;
+          const kabirTake =
+            moments && typeof moments.kabirTake === "string"
+              ? (moments.kabirTake as string)
+              : null;
           reportBySession[sid] = {
-            summary: r.summary as string,
+            summary: kabirTake || (r.summary as string),
+            kabirTake,
           };
         }
       }
@@ -77,9 +86,15 @@ export async function GET() {
 
   const enriched: EnrichedSession[] = list.map((s) => {
     const rep = reportBySession[s.id];
-    const firstSentence = rep?.summary
-      ? rep.summary.split(/(?<=[.!?])\s+/)[0]?.trim() || rep.summary
-      : null;
+    const source = rep?.kabirTake || rep?.summary || "";
+    let firstSentence: string | null = null;
+    if (source) {
+      const end = source.search(/[.!?](\s|$)/);
+      firstSentence =
+        end === -1
+          ? source.trim().slice(0, 220)
+          : source.slice(0, end + 1).trim();
+    }
     return {
       ...s,
       notes_preview: firstSentence,

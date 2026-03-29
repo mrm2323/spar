@@ -92,7 +92,7 @@ function formatTimelineDate(iso: string | null): string {
 }
 
 const CARD =
-  "rounded-xl border border-slate-700/55 bg-[#0b1d3e]/50 shadow-[0_0_0_1px_rgba(15,23,42,0.4)]";
+  "rounded-2xl border border-white/[0.08] bg-[#12121a]/90 shadow-[0_0_0_1px_rgba(15,23,42,0.35)]";
 
 export default function MemoryDashboardPage() {
   const [portrait, setPortrait] = useState<string | null>(null);
@@ -118,6 +118,7 @@ export default function MemoryDashboardPage() {
   const [newGoal, setNewGoal] = useState("");
   const [goalSaving, setGoalSaving] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [clearingPatterns, setClearingPatterns] = useState(false);
 
   const loadProfile = useCallback(async () => {
     setProfileLoading(true);
@@ -125,13 +126,13 @@ export default function MemoryDashboardPage() {
     try {
       const res = await fetch("/api/memory/profile");
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Could not load profile");
+      if (!res.ok) throw new Error(data.error || "couldn't load your portrait");
       setPortrait(typeof data.portrait === "string" ? data.portrait : "");
       setPatterns(Array.isArray(data.patterns) ? data.patterns : []);
       setSessionCount(typeof data.sessionCount === "number" ? data.sessionCount : 0);
       setGeneratedAt(typeof data.generatedAt === "string" ? data.generatedAt : null);
     } catch (e) {
-      setProfileError(e instanceof Error ? e.message : "Could not load profile");
+      setProfileError(e instanceof Error ? e.message : "couldn't load your portrait");
     } finally {
       setProfileLoading(false);
     }
@@ -177,7 +178,7 @@ export default function MemoryDashboardPage() {
       const listData = await listRes.json();
       if (!listRes.ok) {
         setEntriesError(
-          typeof listData.error === "string" ? listData.error : "Could not load goals"
+          typeof listData.error === "string" ? listData.error : "couldn't load goals"
         );
         return;
       }
@@ -251,7 +252,7 @@ export default function MemoryDashboardPage() {
   }
 
   async function clearAllMemories() {
-    if (!confirm("Delete all memory for this account? This cannot be undone.")) return;
+    if (!confirm("make kabir forget everything on this account? can't undo.")) return;
     setClearing(true);
     try {
       const res = await fetch("/api/memory", {
@@ -269,11 +270,31 @@ export default function MemoryDashboardPage() {
     }
   }
 
+  async function clearPatternsOnly() {
+    if (
+      !confirm(
+        "clear pattern recognition? kabir's stored facts and your portrait stay. labels repopulate after more practice."
+      )
+    )
+      return;
+    setClearingPatterns(true);
+    try {
+      const res = await fetch("/api/memory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "clear-patterns" }),
+      });
+      if (res.ok) await loadProfile();
+    } finally {
+      setClearingPatterns(false);
+    }
+  }
+
   const subtitle = useMemo(() => {
     const n = sessionCount;
-    if (n === 0) return "Built from your conversations. Updated after every session.";
-    if (n === 1) return "Built from 1 conversation. Updated after every session.";
-    return `Built from ${n} conversations. Updated after every session.`;
+    if (n === 0) return "this grows every time you talk to kabir.";
+    if (n === 1) return "one conversation in. kabir updates this after every practice.";
+    return `${n} conversations deep. kabir updates this after every practice.`;
   }, [sessionCount]);
 
   /**
@@ -321,33 +342,33 @@ export default function MemoryDashboardPage() {
     return [
       {
         key: "consistency",
-        label: "Conversation consistency",
+        label: "showing up",
         value: consistency,
-        detail: `${sessionCount} completed session${sessionCount === 1 ? "" : "s"} · scale fills toward 25 sessions`,
+        detail: `${sessionCount} practice${sessionCount === 1 ? "" : "s"} · fills in as you hit ~25`,
       },
       {
         key: "patterns",
-        label: "Pattern clarity",
+        label: "patterns kabir sees",
         value: patternClarity,
         detail:
           patterns.length === 0
-            ? "No patterns yet"
+            ? "none yet — give it a few reps"
             : `${patterns.length} of up to 4 pattern${patterns.length === 1 ? "" : "s"} surfaced`,
       },
       {
         key: "people",
-        label: "People context depth",
+        label: "people you've named",
         value: peopleDepth,
-        detail: `${people.length} person${people.length === 1 ? "" : "s"} · scale fills toward 5`,
+        detail: `${people.length} person${people.length === 1 ? "" : "s"} · kabir tracks up to 5`,
       },
       {
         key: "goals",
-        label: "Goal follow-through",
+        label: "goals you asked him to hold",
         value: goalFollowThrough,
         detail:
           goalEntries.length === 0
-            ? "No goals added yet"
-            : `${progressedGoals}/${goalEntries.length} goals with progress flagged`,
+            ? "add one when you're ready"
+            : `${progressedGoals}/${goalEntries.length} where kabir saw movement`,
       },
     ];
   }, [sessionCount, patterns, people, goalEntries]);
@@ -357,12 +378,12 @@ export default function MemoryDashboardPage() {
       {/* HEADER */}
       <header className="text-center sm:text-left">
         <h1 className="text-2xl font-semibold tracking-tight text-slate-50 sm:text-3xl">
-          What Kabir knows about you
+          what kabir knows about you
         </h1>
         <p className="mt-2 text-sm text-slate-500">{subtitle}</p>
         {generatedAt ? (
           <p className="mt-1 text-[11px] text-slate-600">
-            Portrait last refreshed{" "}
+            portrait last refreshed{" "}
             {new Date(generatedAt).toLocaleString(undefined, {
               dateStyle: "medium",
               timeStyle: "short",
@@ -371,13 +392,23 @@ export default function MemoryDashboardPage() {
         ) : null}
       </header>
 
+      <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/[0.04] px-4 py-4 text-sm leading-relaxed text-slate-400">
+        <p className="font-medium text-slate-200">how memory and patterns connect</p>
+        <p className="mt-2">
+          when memory is on, kabir pulls from past sessions, notes, and stored facts so he
+          isn&apos;t starting cold. pattern cards are a separate layer — they summarize habits
+          he&apos;s noticed across conversations. clearing patterns below only resets those
+          labels; use &quot;make kabir forget everything&quot; to wipe stored coaching memory.
+        </p>
+      </div>
+
       {/* SECTION 0 — UNDERSTANDING MAP */}
       <section className={`${CARD} p-6`}>
-        <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-cyan-400/80">
-          Kabir understanding map
+        <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-cyan-400/85">
+          how well kabir knows you
         </h2>
         <p className="mt-2 text-xs text-slate-500">
-          A live signal of how much context Kabir has built across your sessions.
+          rough signal, not a grade — it's how much context he's stacked from your practices.
         </p>
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -388,11 +419,11 @@ export default function MemoryDashboardPage() {
             >
               <div className="flex items-center justify-between gap-3">
                 <p className="text-xs font-medium text-slate-200">{item.label}</p>
-                <span className="font-mono text-[11px] text-cyan-300">{item.value}%</span>
+                <span className="font-mono text-[11px] text-cyan-300/95">{item.value}%</span>
               </div>
               <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
                 <div
-                  className="h-full rounded-full bg-gradient-to-r from-cyan-500/80 to-emerald-400/80 transition-all"
+                  className="h-full rounded-full bg-gradient-to-r from-cyan-500/85 to-violet-600/70 transition-all"
                   style={{ width: `${item.value}%` }}
                 />
               </div>
@@ -404,16 +435,16 @@ export default function MemoryDashboardPage() {
 
       {/* SECTION 1 — YOU AS A COMMUNICATOR */}
       <section className={`${CARD} p-6 sm:p-8`}>
-        <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-cyan-400/80">
-          You as a communicator
+        <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-cyan-400/85">
+          you, in kabir&apos;s words
         </h2>
         {profileLoading ? (
           <div className="mt-6 flex items-center gap-2 text-sm text-slate-400">
             <Loader2 className="h-4 w-4 animate-spin" />
-            Shaping your portrait…
+            kabir&apos;s thinking…
           </div>
         ) : profileError ? (
-          <p className="mt-4 text-sm text-amber-200/90">{profileError}</p>
+          <p className="mt-4 text-sm text-rose-200/90">{profileError}</p>
         ) : (
           <p className="mt-6 text-[17px] leading-[1.75] text-slate-100 sm:text-[18px]">
             {portrait || "—"}
@@ -424,13 +455,13 @@ export default function MemoryDashboardPage() {
       {/* SECTION 2 — YOUR PATTERNS */}
       <section className={`${CARD} p-6`}>
         <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-400">
-          Your patterns
+          patterns he keeps seeing
         </h2>
         {profileLoading ? (
-          <p className="mt-4 text-sm text-slate-500">Loading…</p>
+          <p className="mt-4 text-sm text-slate-500">kabir&apos;s thinking…</p>
         ) : patterns.length === 0 ? (
           <p className="mt-4 text-sm text-slate-500">
-            Patterns will show up here as Kabir gets more reps with you.
+            nothing here yet — a few more practices and he&apos;ll start naming what repeats.
           </p>
         ) : (
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
@@ -449,10 +480,10 @@ export default function MemoryDashboardPage() {
                   className={`mt-3 text-xs font-medium ${
                     p.status === "improving"
                       ? "text-emerald-400/95"
-                      : "text-amber-400/95"
+                      : "text-violet-400/95"
                   }`}
                 >
-                  {p.status === "improving" ? "Improving" : "Persistent"}
+                  {p.status === "improving" ? "getting better" : "still showing up"}
                   <span className="ml-2 font-normal text-slate-500">
                     {sessionCount > 0 ? (
                       <>
@@ -473,14 +504,13 @@ export default function MemoryDashboardPage() {
       {/* SECTION 3 — PEOPLE */}
       <section className={`${CARD} p-6`}>
         <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-400">
-          People Kabir knows about
+          people you&apos;ve brought up
         </h2>
         {peopleLoading ? (
-          <p className="mt-4 text-sm text-slate-500">Loading…</p>
+          <p className="mt-4 text-sm text-slate-500">kabir&apos;s thinking…</p>
         ) : people.length === 0 ? (
           <p className="mt-4 text-sm leading-relaxed text-slate-500">
-            As you talk to Kabir about the people in your life, he&apos;ll build a picture
-            of each one here.
+            name your roommate, your manager, whoever — kabir builds a card for each one.
           </p>
         ) : (
           <div className="mt-5 space-y-3">
@@ -508,7 +538,7 @@ export default function MemoryDashboardPage() {
                         {person.summary}
                       </p>
                       <p className="mt-2 text-[11px] text-slate-600">
-                        Last discussed: {formatRelativeDiscussed(person.lastDiscussedIso)}
+                        last talked about: {formatRelativeDiscussed(person.lastDiscussedIso)}
                       </p>
                     </div>
                     {open ? (
@@ -532,16 +562,16 @@ export default function MemoryDashboardPage() {
       {/* SECTION 4 — PROGRESS TIMELINE */}
       <section className={`${CARD} p-6`}>
         <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-400">
-          Your progress
+          your practice history
         </h2>
         <p className="mt-1 text-xs text-slate-500">
-          Your journey through Kabir&apos;s eyes — one line per session.
+          one line per practice — how kabir remembers it.
         </p>
         {timelineLoading ? (
-          <p className="mt-4 text-sm text-slate-500">Loading…</p>
+          <p className="mt-4 text-sm text-slate-500">kabir&apos;s thinking…</p>
         ) : timeline.length === 0 ? (
           <p className="mt-4 text-sm text-slate-500">
-            No completed sessions yet. Finish a practice and open Kabir&apos;s notes.
+            first time? finish a practice, then open kabir&apos;s notes — it shows up here.
           </p>
         ) : (
           <ul className="mt-5 space-y-4 border-l border-slate-700/60 pl-4">
@@ -550,7 +580,7 @@ export default function MemoryDashboardPage() {
               const dateLabel = formatTimelineDate(row.date);
               return (
                 <li key={row.id} className="relative text-sm leading-relaxed text-slate-300">
-                  <span className="absolute -left-[21px] top-1.5 h-2 w-2 rounded-full bg-cyan-500/70" />
+                  <span className="absolute -left-[21px] top-1.5 h-2 w-2 rounded-full bg-cyan-500/75" />
                   <span className="font-mono text-[11px] text-slate-500">{dateLabel}</span>
                   <span className="text-slate-500">: </span>
                   {line ? (
@@ -558,13 +588,13 @@ export default function MemoryDashboardPage() {
                   ) : row.context ? (
                     <span>{row.context.slice(0, 160)}</span>
                   ) : (
-                    <span className="text-slate-500">Session saved.</span>
+                    <span className="text-slate-500">saved — notes still loading.</span>
                   )}
                   <Link
                     href={`/notes/${row.id}`}
-                    className="ml-2 text-[11px] text-cyan-400/90 hover:text-cyan-300"
+                    className="ml-2 text-[11px] text-cyan-400/95 hover:text-violet-300"
                   >
-                    Notes →
+                    {"kabir's take →"}
                   </Link>
                 </li>
               );
@@ -576,38 +606,37 @@ export default function MemoryDashboardPage() {
       {/* SECTION 5 — GOALS */}
       <section className={`${CARD} p-6`}>
         <div className="flex items-start gap-3">
-          <Target className="mt-0.5 h-5 w-5 text-cyan-400/80" aria-hidden />
+          <Target className="mt-0.5 h-5 w-5 text-cyan-400/85" aria-hidden />
           <div className="flex-1">
             <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-slate-400">
-              Goals
+              what you want him to push on
             </h2>
             <p className="mt-1 text-xs text-slate-500">
-              What you want Kabir to remember to push on. He can flag progress here after
-              sessions.
+              drop a goal. after sessions, kabir can flag when he sees you move on it.
             </p>
             <div className="mt-4 flex flex-col gap-2 sm:flex-row">
               <input
                 value={newGoal}
                 onChange={(e) => setNewGoal(e.target.value)}
-                placeholder="e.g. Ask my manager for role clarity"
-                className="min-w-0 flex-1 rounded-lg border border-slate-600/70 bg-slate-950/50 px-4 py-3 text-sm text-slate-100 outline-none focus:border-cyan-500/55"
+                placeholder="e.g. ask my manager for role clarity"
+                className="min-w-0 flex-1 rounded-xl border border-slate-600/70 bg-slate-950/50 px-4 py-3 text-sm text-slate-100 outline-none focus:border-cyan-500/55"
               />
               <button
                 type="button"
                 onClick={() => void addGoal()}
                 disabled={goalSaving || !newGoal.trim()}
-                className="rounded-lg bg-cyan-600 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-cyan-500 disabled:opacity-40"
+                className="rounded-xl bg-gradient-to-r from-cyan-400 to-violet-500 px-5 py-3 text-sm font-semibold text-[#0A0A0F] transition-colors hover:opacity-95 disabled:opacity-40"
               >
-                {goalSaving ? "Adding…" : "Add goal"}
+                {goalSaving ? "adding…" : "add goal"}
               </button>
             </div>
             {entriesLoading ? (
-              <p className="mt-4 text-sm text-slate-500">Loading goals…</p>
+              <p className="mt-4 text-sm text-slate-500">kabir&apos;s thinking…</p>
             ) : entriesError ? (
-              <p className="mt-4 text-sm text-amber-200/90">{entriesError}</p>
+              <p className="mt-4 text-sm text-rose-200/90">{entriesError}</p>
             ) : goalEntries.length === 0 ? (
               <p className="mt-4 text-sm text-slate-500">
-                No goals yet. Add what you want Kabir to hold you accountable for.
+                no goals yet. add what you want him to nag you about.
               </p>
             ) : (
               <ul className="mt-5 space-y-3">
@@ -627,7 +656,7 @@ export default function MemoryDashboardPage() {
                       <span className="flex-1">{g.content.replace(/^Goal:\s*/i, "")}</span>
                       {noticed ? (
                         <span className="text-xs text-emerald-400/90">
-                          Kabir noticed progress ·{" "}
+                          kabir noticed you moved on this ·{" "}
                           {new Date(noticed).toLocaleDateString(undefined, {
                             month: "short",
                             day: "numeric",
@@ -651,11 +680,11 @@ export default function MemoryDashboardPage() {
       <section className={`${CARD} space-y-6 p-6`}>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-sm font-medium text-slate-100">Memory in coaching</p>
+            <p className="text-sm font-medium text-slate-100">memory in coaching</p>
             <p className="mt-1 text-xs text-slate-500">
               {enabled
-                ? "On — Kabir uses what he knows to personalize practice."
-                : "Off — each session starts without your stored portrait."}
+                ? "on — kabir uses what he knows to personalize practice."
+                : "off — each practice starts without your stored portrait."}
             </p>
           </div>
           <button
@@ -664,29 +693,43 @@ export default function MemoryDashboardPage() {
             onClick={() => void savePreference(!enabled)}
             className={`shrink-0 rounded-full px-5 py-2 text-xs font-semibold transition-colors ${
               enabled
-                ? "border border-cyan-500/50 bg-cyan-500/15 text-cyan-100"
+                ? "border border-cyan-500/50 bg-cyan-500/12 text-cyan-100"
                 : "border border-slate-600 bg-slate-800 text-slate-300"
             }`}
           >
-            {savingPref ? "…" : enabled ? "Memory on" : "Memory off"}
+            {savingPref ? "…" : enabled ? "memory on" : "memory off"}
           </button>
         </div>
 
-        <div className="border-t border-slate-800/80 pt-4">
-          <button
-            type="button"
-            disabled={clearing}
-            onClick={() => void clearAllMemories()}
-            className="text-xs text-rose-400/80 underline decoration-rose-500/30 underline-offset-2 transition-colors hover:text-rose-300"
-          >
-            {clearing ? "Deleting…" : "Delete all memory"}
-          </button>
+        <div className="space-y-3 border-t border-slate-800/80 pt-4">
+          <div>
+            <button
+              type="button"
+              disabled={clearingPatterns}
+              onClick={() => void clearPatternsOnly()}
+              className="text-xs text-cyan-300/90 underline decoration-cyan-500/35 underline-offset-2 transition-colors hover:text-cyan-200"
+            >
+              {clearingPatterns ? "clearing patterns…" : "reset pattern recognition"}
+            </button>
+            <p className="mt-1.5 text-[11px] text-slate-600">
+              clears habit labels only. your facts and portrait stay until the next full reset.
+            </p>
+          </div>
+          <div>
+            <button
+              type="button"
+              disabled={clearing}
+              onClick={() => void clearAllMemories()}
+              className="text-xs text-rose-400/80 underline decoration-rose-500/30 underline-offset-2 transition-colors hover:text-rose-300"
+            >
+              {clearing ? "clearing…" : "make kabir forget everything"}
+            </button>
+          </div>
         </div>
 
         <p className="flex items-center gap-2 text-[11px] text-slate-600">
           <Lock className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
-          Your data is encrypted and private. Only you and Kabir&apos;s coaching systems
-          see this.
+          your data is encrypted. only you and kabir&apos;s coaching systems see this.
         </p>
       </section>
     </div>

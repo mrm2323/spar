@@ -15,7 +15,7 @@ export function DashboardFooter() {
     <footer className="dashboard-shell-footer relative z-10 mx-auto max-w-5xl space-y-2 px-6 pb-10">
       <p className="flex items-center justify-center gap-1.5 text-center text-[11px] text-slate-500">
         <Lock className="h-3 w-3 shrink-0 opacity-70" aria-hidden />
-        End-to-end encrypted. Your conversations are private.
+        your conversations are encrypted. they stay private.
       </p>
       <p className="text-center text-[11px] text-slate-500">
         <a

@@ -87,7 +87,7 @@ export async function buildResumeContextForPrompt(
 ════════════════════════
 CONTINUING WHERE YOU LEFT OFF
 ════════════════════════
-They tapped "Continue this practice" — this is the SAME situation as before, not a new topic.
+They tapped "pick up where we left off" — this is the SAME situation as before, not a new topic.
 
 Original context they shared: ${session.context?.trim() || "None recorded."}
 

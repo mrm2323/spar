@@ -95,8 +95,8 @@ export function SessionOutcomeFollowUp({
           onClick={() => setOutcome("tough")}
           className={`flex-1 rounded-lg border px-4 py-3 text-sm font-medium transition-colors sm:max-w-[200px] ${
             outcome === "tough"
-              ? "border-amber-400/80 bg-amber-500/15 text-amber-100"
-              : "border-amber-500/50 bg-transparent text-amber-100/90 hover:bg-amber-500/10"
+              ? "border-cyan-400/80 bg-cyan-500/15 text-cyan-100"
+              : "border-violet-500/50 bg-transparent text-violet-100/90 hover:bg-violet-500/10"
           }`}
         >
           It was tough

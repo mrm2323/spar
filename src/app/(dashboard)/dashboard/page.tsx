@@ -13,6 +13,10 @@ import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import { startPracticeReplaySession, trackEvent } from "@/lib/analytics";
 import { UnderstandingMap } from "@/components/UnderstandingMap";
+import {
+  CONTEXT_SITUATION_PRESETS,
+  appendSituationPreset,
+} from "@/lib/context-presets";
 
 interface PastSession {
   id: string;
@@ -35,6 +39,26 @@ interface SessionCapStatus {
   nextResetTime?: string;
   /** True when user is in SPAR_CAP_EXEMPT_USER_IDS */
   capExempt?: boolean;
+}
+
+function dashboardGreeting(
+  firstName: string | null,
+  memorySnippet: string | null
+): string {
+  const name = firstName?.trim() || "there";
+  const sn = memorySnippet?.toLowerCase() ?? "";
+  if (
+    /\b(tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next week)\b/.test(
+      sn
+    )
+  ) {
+    return `sounds like something's coming up soon, ${name}. want to run through it?`;
+  }
+  const h = new Date().getHours();
+  if (h >= 5 && h < 12) return `morning, ${name}. what's on your mind today?`;
+  if (h >= 12 && h < 17) return `hey ${name}. anything coming up?`;
+  if (h >= 17 && h < 22) return `hey ${name}. anything coming up?`;
+  return `late night, ${name}? what conversation are you avoiding?`;
 }
 
 function relativeSessionTime(iso: string | null): string {
@@ -127,18 +151,18 @@ function DashboardInner() {
             router.replace(`/session/${data.sessionId}`);
           } else {
             if (data.cap) setCapStatus(data.cap);
-            setStartError(
-              data.message ||
-                data.error ||
-                "Could not start another session right now."
-            );
+        setStartError(
+          data.message ||
+            data.error ||
+            "something broke. try again?"
+        );
             setLoading(false);
             resumeHandledRef.current = false;
           }
         }
       )
       .catch(() => {
-        setStartError("Could not start another session right now.");
+        setStartError("something broke. try again?");
         setLoading(false);
         resumeHandledRef.current = false;
       });
@@ -271,6 +295,7 @@ function DashboardInner() {
   }, []);
 
   const visibleSessions = showAllSessions ? sessions : sessions.slice(0, 3);
+  const greetingLine = dashboardGreeting(firstName, memorySnippet);
 
   async function startSession() {
     setLoading(true);
@@ -309,7 +334,7 @@ function DashboardInner() {
         setStartError(
           data?.message ||
             data?.error ||
-            "Could not start another session right now."
+            "something broke. try again?"
         );
         setLoading(false);
         return;
@@ -342,50 +367,75 @@ function DashboardInner() {
         status: 0,
         error: "network_or_unknown",
       });
-      setStartError("Could not start another session right now.");
+      setStartError("something broke. try again?");
       setLoading(false);
     }
   }
 
   return (
-    <div className="text-[#E2E8F0]">
-      {/* TOP */}
-      <div className="flex min-h-[60vh] flex-col items-center justify-center">
-        <div className="text-center">
+    <div className="text-[#F1F5F9]">
+      {/* TOP — greeting, mic, context */}
+      <div className="flex min-h-[65vh] flex-col items-center justify-center px-2">
+        <div className="w-full max-w-xl text-center">
+          {!loading && userLoaded ? (
+            <p className="text-lg font-medium leading-snug tracking-tight text-[#F8FAFC] sm:text-xl">
+              {greetingLine}
+            </p>
+          ) : null}
+
           {!loading && (
-            <p className="mb-4 text-[12px] font-medium uppercase tracking-[0.18em] text-cyan-300/85">
-              Tap mic to start
+            <button
+              type="button"
+              onClick={startSession}
+              disabled={loading}
+              aria-label="talk to kabir"
+              className="group relative mx-auto mt-10 flex h-52 w-52 cursor-pointer items-center justify-center rounded-full border border-cyan-500/35 bg-cyan-500/[0.07] transition-all duration-300 hover:scale-[1.01] hover:border-violet-400/40 hover:bg-cyan-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0A0A0F] disabled:cursor-not-allowed disabled:opacity-50 sm:h-56 sm:w-56"
+            >
+              <span className="pointer-events-none absolute inset-0 rounded-full bg-gradient-to-br from-cyan-400/22 to-violet-600/12 blur-3xl" />
+              <span className="pointer-events-none absolute inset-4 rounded-full border border-cyan-200/10" />
+              <span className="pointer-events-none absolute inset-0 rounded-full animate-pulse-slow border border-violet-400/25" />
+              {loading ? (
+                <Loader2 className="relative z-10 h-11 w-11 animate-spin text-cyan-200" />
+              ) : (
+                <div className="relative z-10 flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 to-violet-500 text-[#0A0A0F] shadow-[0_0_38px_rgba(56,189,248,0.38)] transition-transform duration-300 group-hover:scale-[1.04] sm:h-[5.5rem] sm:w-[5.5rem]">
+                  <Mic className="h-10 w-10 sm:h-11 sm:w-11" />
+                </div>
+              )}
+            </button>
+          )}
+
+          {!loading && (
+            <p className="mx-auto mt-5 max-w-xs text-sm" style={{ color: "#94A3B8" }}>
+              tap to talk to kabir
             </p>
           )}
 
-          <button
-            type="button"
-            onClick={startSession}
-            disabled={loading}
-            aria-label="Start conversation with Kabir"
-            className="group relative mx-auto mb-6 flex h-44 w-44 cursor-pointer items-center justify-center rounded-full border border-cyan-300/25 bg-cyan-400/5 transition-all duration-300 hover:scale-[1.01] hover:border-cyan-300/60 hover:bg-cyan-400/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#020617] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <span className="pointer-events-none absolute inset-0 rounded-full bg-gradient-to-br from-cyan-400/25 to-blue-500/15 blur-2xl" />
-            <span className="pointer-events-none absolute inset-3 rounded-full border border-cyan-200/15" />
-            <span className="pointer-events-none absolute inset-0 rounded-full animate-pulse-ring border border-cyan-300/30" />
-            {loading ? (
-              <Loader2 className="relative z-10 h-10 w-10 animate-spin text-cyan-200" />
-            ) : (
-              <div className="relative z-10 flex h-20 w-20 items-center justify-center rounded-full bg-cyan-400 text-slate-950 shadow-[0_0_28px_rgba(56,189,248,0.45)] transition-transform duration-300 group-hover:scale-[1.03]">
-                <Mic className="h-9 w-9" />
-              </div>
-            )}
-          </button>
-
           {!loading && (
             <details className="mx-auto mt-6 w-full max-w-xl text-left [&_summary::-webkit-details-marker]:hidden">
-              <summary className="cursor-pointer list-none text-sm font-medium text-slate-400 transition-colors hover:text-slate-200">
+              <summary className="cursor-pointer list-none text-sm font-medium text-[#94A3B8] transition-colors hover:text-[#F1F5F9]">
                 <span className="inline-flex items-center gap-2">
-                  Add context for Kabir
+                  add what kabir should read first
                   <span className="text-[10px] text-slate-600">▼</span>
                 </span>
               </summary>
               <div className="mt-4 space-y-3 border-t border-slate-800/80 pt-4">
+                <p className="text-xs font-medium text-[#94A3B8]">
+                  quick situation (optional)
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {CONTEXT_SITUATION_PRESETS.map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() =>
+                        setContextText((t) => appendSituationPreset(t, preset))
+                      }
+                      className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-3 py-1.5 text-[11px] font-medium text-cyan-100/90 transition-colors hover:border-violet-400/35 hover:bg-violet-500/10"
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
                 <label htmlFor="kabir-context-paste" className="sr-only">
                   Context for Kabir
                 </label>
@@ -393,9 +443,9 @@ function DashboardInner() {
                   id="kabir-context-paste"
                   value={contextText}
                   onChange={(e) => setContextText(e.target.value)}
-                  placeholder="Paste an email, message, job description, or anything Kabir should read before your session."
+                  placeholder="Add context — paste an email, message, job description, or anything else Kabir should read first."
                   rows={6}
-                  className="w-full rounded-lg border border-slate-700/55 bg-slate-900/55 px-4 py-3 text-sm text-white placeholder-slate-500 outline-none focus:border-cyan-500/60"
+                  className="w-full rounded-xl border border-white/[0.08] bg-[#12121a] px-4 py-3 text-sm text-[#F1F5F9] placeholder-[#64748B] outline-none focus:border-cyan-500/40"
                 />
                 <p className="text-xs leading-relaxed text-slate-500">
                   Kabir will read this before your conversation starts.
@@ -467,33 +517,33 @@ function DashboardInner() {
                   type="button"
                   onClick={() => void startSession()}
                   disabled={loading}
-                  className="w-full rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-500 disabled:opacity-50"
+                  className="w-full rounded-xl bg-gradient-to-r from-cyan-400 to-violet-500 px-4 py-3 text-sm font-semibold text-[#0A0A0F] transition-opacity hover:opacity-95 disabled:opacity-50"
                 >
-                  Start session with this context
+                  talk to kabir with this context
                 </button>
               </div>
             </details>
           )}
 
           {!loading && memorySnippet ? (
-            <p className="mx-auto mt-4 flex max-w-lg items-center justify-center gap-2 px-2 text-center text-xs leading-relaxed text-slate-400">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" aria-hidden />
-              <span>Kabir remembers your last session.</span>
+            <p className="mx-auto mt-4 flex max-w-lg items-center justify-center gap-2 px-2 text-center text-xs leading-relaxed text-[#94A3B8]">
+              <span className="h-1.5 w-1.5 rounded-full bg-cyan-400/80" aria-hidden />
+              <span>kabir remembers your last session.</span>
             </p>
           ) : null}
           {!loading && knownPeople.length > 0 ? (
-            <p className="mx-auto mt-1 max-w-lg px-2 text-center text-[11px] text-slate-500">
-              Kabir knows about: {knownPeople.join(", ")}
+            <p className="mx-auto mt-1 max-w-lg px-2 text-center text-[11px] text-[#64748B]">
+              kabir knows about: {knownPeople.join(", ")}
             </p>
           ) : null}
 
           {capStatus ? (
-            <p className="mx-auto mt-5 max-w-lg text-center text-sm text-cyan-300/80">
+            <p className="mx-auto mt-5 max-w-lg text-center text-sm text-cyan-200/85">
               {capStatus.capExempt ? (
-                <>Practice cap: unlimited (owner)</>
+                <>unlimited practice</>
               ) : (
                 <>
-                  Free launch practice left:{" "}
+                  free practice left:{" "}
                   {Math.floor(capStatus.remainingSeconds / 60)} min{" "}
                   {String(capStatus.remainingSeconds % 60).padStart(2, "0")} sec
                 </>
@@ -502,66 +552,71 @@ function DashboardInner() {
           ) : null}
 
           {startError ? (
-            <p className="mx-auto mt-3 max-w-lg text-center text-sm text-amber-300/90">
+            <p className="mx-auto mt-3 max-w-lg text-center text-sm text-violet-300/90">
               {startError}
             </p>
           ) : null}
 
-          {!loading && userLoaded ? (
-            <p className="mx-auto mt-8 max-w-2xl px-2 text-center text-[1.35rem] font-semibold leading-snug tracking-tight text-cyan-50/95 sm:text-2xl">
-              {firstName
-                ? `Hi, ${firstName}`
-                : "Hi there"}
-            </p>
-          ) : null}
-
-          <h1
-            className={`text-4xl font-bold tracking-tight leading-tight ${!loading && userLoaded ? "mt-3" : "mt-8"}`}
+          <p
+            className={`mx-auto mt-8 max-w-xl text-base leading-relaxed text-[#94A3B8] ${!loading && userLoaded ? "" : "mt-10"}`}
           >
             {loading
-              ? "Connecting to Kabir..."
-              : "What conversation are you looking forward to?"}
-          </h1>
-
-          <p className="mx-auto mt-6 max-w-xl text-base leading-relaxed text-slate-300">
-            Kabir is an AI coach. Practice first, then walk in ready.
+              ? "kabir's thinking…"
+              : "what conversation are you rehearsing?"}
           </p>
         </div>
       </div>
 
       {/* MIDDLE — sessions or first-time */}
-      <div className="mt-8 border-t border-slate-800/70 pt-14">
+      <div className="mt-10 border-t border-white/[0.06] pt-14">
         {sessions.length > 0 ? (
           <>
-            <h2 className="mb-7 text-sm font-semibold uppercase tracking-widest text-slate-300">
-              Your conversation threads
+            {sessions.length >= 3 && (pattern || memorySnippet) ? (
+              <Link
+                href="/dashboard/memory"
+                className="mb-8 block rounded-2xl border border-cyan-500/25 bg-cyan-500/[0.06] px-5 py-4 text-left transition-colors hover:border-violet-400/35"
+              >
+                <p className="text-[11px] font-medium uppercase tracking-wider text-cyan-400/90">
+                  kabir has noticed
+                </p>
+                <p className="mt-2 text-sm font-medium italic leading-relaxed text-violet-200/95">
+                  {pattern?.weakness
+                    ? `you tend to ${pattern.weakness}`
+                    : memorySnippet}
+                </p>
+                <p className="mt-2 text-xs text-[#94A3B8]">open what kabir knows →</p>
+              </Link>
+            ) : null}
+            <h2 className="mb-7 text-sm font-semibold uppercase tracking-widest text-[#94A3B8]">
+              your practice history
             </h2>
             <div className="space-y-4">
               {visibleSessions.map((session) => (
                 <Link
                   key={session.id}
                   href={`/notes/${session.id}`}
-                  className="block rounded-lg border border-slate-600/50 bg-[#0b1d3e]/55 px-5 py-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] transition-colors hover:border-cyan-500/50"
+                  className="block rounded-xl border border-white/[0.08] bg-[#12121a] px-5 py-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-colors hover:border-cyan-500/35"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <p className="font-mono text-[10px] uppercase tracking-wider text-slate-400">
+                        <p className="font-mono text-[10px] uppercase tracking-wider text-[#64748B]">
                           {relativeSessionTime(session.ended_at)}
                         </p>
                         {(session.thread_attempts || 1) > 1 ? (
-                          <span className="rounded border border-cyan-500/40 bg-cyan-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-cyan-200">
+                          <span className="rounded border border-violet-500/30 bg-violet-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-violet-200/90">
                             {session.thread_attempts} attempts
                           </span>
                         ) : null}
                       </div>
-                      <p className="mt-1 line-clamp-2 text-sm text-slate-100">
+                      <p className="mt-2 line-clamp-3 text-sm font-medium italic leading-relaxed text-cyan-100/95">
                         {session.notes_preview ||
                           session.context ||
-                          "Session"}
+                          "session saved"}
                       </p>
+                      <p className="mt-2 text-[11px] text-[#64748B]">kabir&apos;s take →</p>
                     </div>
-                    <ArrowRight className="h-4 w-4 shrink-0 text-slate-500" />
+                    <ArrowRight className="h-4 w-4 shrink-0 text-cyan-500/50" />
                   </div>
                 </Link>
               ))}
@@ -574,14 +629,14 @@ function DashboardInner() {
                   onClick={() => setShowAllSessions((v) => !v)}
                   className="rounded-full border border-slate-600/60 bg-slate-900/35 px-4 py-2 text-xs font-medium uppercase tracking-wider text-slate-300 transition-colors hover:border-cyan-500/60 hover:text-white"
                 >
-                  {showAllSessions ? "Show less" : "Read more"}
+                  {showAllSessions ? "show less" : "show more"}
                 </button>
               </div>
             )}
           </>
         ) : (
-          <p className="text-center text-sm leading-relaxed text-slate-400">
-            First time? Tell Kabir what&apos;s coming up. He&apos;s heard it all.
+          <p className="text-center text-sm leading-relaxed text-[#94A3B8]">
+            first time? tell kabir what&apos;s coming up. he&apos;s heard it all.
           </p>
         )}
       </div>
@@ -598,18 +653,6 @@ function DashboardInner() {
         </div>
       )}
 
-      {/* Pattern — 3+ sessions */}
-      {pattern && pattern.total_sessions >= 3 && (
-        <div className="mt-10 border-t border-slate-800/70 pt-10">
-          <h2 className="mb-3 text-xs font-medium uppercase tracking-widest text-slate-400">
-            Kabir&apos;s pattern
-          </h2>
-          <div className="rounded-lg border border-slate-600/50 bg-[#0b1d3e]/55 px-4 py-4 text-sm leading-relaxed text-slate-200 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-            Across {pattern.total_sessions} sessions, Kabir noticed you tend to{" "}
-            {pattern.weakness}. Keep practicing — this usually improves fast.
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -619,7 +662,7 @@ export default function DashboardPage() {
     <Suspense
       fallback={
         <div className="flex min-h-[40vh] items-center justify-center text-slate-400">
-          Loading…
+          kabir&apos;s thinking…
         </div>
       }
     >

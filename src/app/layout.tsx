@@ -18,9 +18,9 @@ const ibmMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SPAR — AI voice companion for hard conversations",
+  title: "spar — talk it through with kabir before it counts",
   description:
-    "Rehearse out loud with Kabir. Real pushback, notes you can use—before raises, boundaries, feedback, and the talks you’ve been putting off.",
+    "the friend you call at 11pm when you're spiraling about tomorrow's conversation. practice out loud. get kabir's notes. built for international students and anyone who needs the words.",
 };
 
 export default function RootLayout({
@@ -29,7 +29,25 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <ClerkProvider>
+    <ClerkProvider
+      localization={{
+        signIn: {
+          start: {
+            title: "get started",
+            subtitle: "welcome back. your practices stay private.",
+          },
+        },
+        signUp: {
+          start: {
+            title: "join spar",
+            subtitle: "takes a minute. then you can talk to kabir.",
+          },
+        },
+        userButton: {
+          action__signOut: "sign out",
+        },
+      }}
+    >
       <html lang="en" className="dark">
         <body
           className={`${dmSans.variable} ${ibmMono.variable} font-sans antialiased bg-[#0A0A0F] text-zinc-50`}

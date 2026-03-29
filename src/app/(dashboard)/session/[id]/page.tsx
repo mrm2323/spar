@@ -565,7 +565,7 @@ export default function SessionPage() {
       setEnding(false);
       setStatus("error");
       setErrorMsg(
-        `Could not end this session: ${error instanceof Error ? error.message : "unknown error"}`
+        `something broke wrapping up: ${error instanceof Error ? error.message : "unknown"}`
       );
     }
   }, [id, speaking, elapsed]);
@@ -583,12 +583,12 @@ export default function SessionPage() {
     if (!id) return;
 
     if (!callRating) {
-      setFeedbackError("Please rate the call out of 5 stars.");
+      setFeedbackError("quick — rate the call (1–5) so kabir knows how it felt.");
       return;
     }
 
     if (!recommendScore) {
-      setFeedbackError("Please share how likely you are to recommend Kabir (1-10).");
+      setFeedbackError("slide the recommend score (1–10). helps us tune him.");
       return;
     }
 
@@ -631,7 +631,7 @@ export default function SessionPage() {
 
       continueToNotes();
     } catch (error) {
-      const msg = error instanceof Error ? error.message : "Could not save feedback";
+      const msg = error instanceof Error ? error.message : "couldn't save that. try again?";
       setFeedbackError(msg);
       trackEvent("session_feedback_submit_failed", {
         session_id: id,
@@ -710,7 +710,7 @@ export default function SessionPage() {
   if (status === "ended") {
     return (
       <div className="flex min-h-[80vh] flex-col items-center justify-center text-center">
-        <p className="text-sm text-slate-300">Kabir is writing his notes...</p>
+        <p className="text-sm text-slate-300">kabir&apos;s writing his notes…</p>
         <div className="mt-4 flex gap-1">
           {[0, 1, 2].map((i) => (
             <div
@@ -748,7 +748,7 @@ export default function SessionPage() {
                     aria-label={`Rate ${value} out of 5`}
                     onClick={() => setCallRating(value)}
                     className={`rounded-md p-1.5 transition-colors ${
-                      active ? "text-amber-300" : "text-slate-500 hover:text-slate-300"
+                      active ? "text-cyan-300" : "text-slate-500 hover:text-slate-300"
                     }`}
                   >
                     <Star className={`h-7 w-7 ${active ? "fill-current" : ""}`} />
@@ -857,7 +857,7 @@ export default function SessionPage() {
               />
             ))}
           </div>
-          <p className="text-sm text-slate-400">Connecting to Kabir...</p>
+          <p className="text-sm text-slate-400">connecting…</p>
         </div>
       )}
 
@@ -899,7 +899,7 @@ export default function SessionPage() {
             <p className="mt-2 text-xs text-cyan-300/80">{capHint}</p>
           ) : null}
           {silenceBanner ? (
-            <p className="mt-2 text-xs text-amber-300/90">{silenceBanner}</p>
+            <p className="mt-2 text-xs text-cyan-300/90">{silenceBanner}</p>
           ) : null}
 
           {liveMessages.length > 0 ? (
@@ -917,7 +917,7 @@ export default function SessionPage() {
                         ? "border-cyan-700/50 bg-cyan-950/20 text-slate-100"
                         : m.role === "user"
                           ? "border-emerald-700/50 bg-emerald-950/20 text-slate-100"
-                          : "border-amber-700/50 bg-amber-950/20 text-slate-100"
+                          : "border-cyan-700/50 bg-cyan-950/20 text-slate-100"
                     }`}
                   >
                     <span
@@ -926,7 +926,7 @@ export default function SessionPage() {
                           ? "text-cyan-300"
                           : m.role === "user"
                             ? "text-emerald-300"
-                            : "text-amber-300"
+                            : "text-cyan-300"
                       }`}
                     >
                       {m.role === "assistant" ? "Kabir" : m.role === "user" ? "You" : "System"}

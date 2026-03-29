@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
+import { DashboardNavExtras } from "@/components/dashboard/DashboardNavExtras";
 import { DashboardFooter } from "./dashboard-footer";
 
 export default function DashboardLayout({
@@ -8,25 +9,20 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#020617]">
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_18%_20%,rgba(14,165,233,0.12),transparent_35%),radial-gradient(circle_at_82%_70%,rgba(59,130,246,0.12),transparent_38%),linear-gradient(180deg,#020617_0%,#08142a_50%,#020617_100%)]" />
-      <div className="pointer-events-none fixed inset-0 opacity-[0.06] [background-image:linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] [background-size:34px_34px]" />
+    <div className="relative min-h-screen overflow-hidden bg-[#0A0A0F]">
+      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-10%,rgba(56,189,248,0.09),transparent_50%),radial-gradient(ellipse_60%_40%_at_100%_0%,rgba(167,139,250,0.06),transparent_45%),linear-gradient(180deg,#0A0A0F_0%,#0f0f17_50%,#0A0A0F_100%)]" />
+      <div className="pointer-events-none fixed inset-0 opacity-[0.05] [background-image:linear-gradient(rgba(255,255,255,0.04)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.04)_1px,transparent_1px)] [background-size:34px_34px]" />
 
-      <nav className="fixed top-0 z-50 w-full border-b border-slate-800/70 bg-[#050c1d]/80 backdrop-blur-md">
+      <nav className="fixed top-0 z-50 w-full border-b border-white/[0.06] bg-[#0A0A0F]/85 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-6">
           <Link
             href="/"
-            className="text-lg font-semibold tracking-tight text-cyan-300"
+            className="font-mono text-sm font-semibold tracking-[0.14em] text-cyan-400/95"
           >
             spar
           </Link>
           <div className="flex items-center gap-3">
-            <Link
-              href="/dashboard/memory"
-              className="rounded-md border border-cyan-400/30 bg-cyan-400/10 px-3 py-1.5 text-xs font-medium text-cyan-100 transition-colors hover:border-cyan-300/50 hover:bg-cyan-400/20"
-            >
-              Memory
-            </Link>
+            <DashboardNavExtras />
             <UserButton
               appearance={{
                 elements: {

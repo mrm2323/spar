@@ -73,7 +73,7 @@ function getReadinessDisplay(notes: NotesData): string {
   if (lbl === "Not scored yet") {
     return "I did not hear enough to tell you. Give me 5 minutes next time and I will give you a real answer.";
   }
-  return "This session was saved before Kabir's readiness note. Start a new practice to see his honest read.";
+  return "this practice was saved before kabir's readiness line. run it again to get his honest read.";
 }
 
 /** True when Kabir's read is fully supportive — primary CTA is affirming, not restart. */
@@ -138,7 +138,7 @@ function getMoment(
 
 function statHeatClass(n: number): string {
   if (n <= 2) return "text-emerald-400";
-  if (n <= 5) return "text-amber-400";
+  if (n <= 5) return "text-cyan-400";
   return "text-red-400";
 }
 
@@ -267,7 +267,7 @@ export function NotesClient({
         setSessionStartError(
           data?.message ||
             data?.error ||
-            "Could not start another session right now."
+            "something broke. try again?"
         );
         setRestarting(false);
         return;
@@ -299,7 +299,7 @@ export function NotesClient({
         status: 0,
         error: "network_or_unknown",
       });
-      setSessionStartError("Could not start another session right now.");
+      setSessionStartError("something broke. try again?");
       setRestarting(false);
     }
   }
@@ -323,7 +323,7 @@ export function NotesClient({
         setSessionStartError(
           data?.message ||
             data?.error ||
-            "Could not continue this practice right now."
+            "couldn't pick that up. try again?"
         );
         setContinuing(false);
         return;
@@ -344,7 +344,7 @@ export function NotesClient({
       );
       router.push(`/session/${data.sessionId}`);
     } catch {
-      setSessionStartError("Could not continue this practice right now.");
+      setSessionStartError("couldn't pick that up. try again?");
       setContinuing(false);
     }
   }
@@ -378,9 +378,9 @@ export function NotesClient({
       generatingRef.current = true;
 
       const messages = [
-        "He's picking out the key moments...",
-        "Almost there...",
-        "Writing his notes...",
+        "he's picking out the key moments…",
+        "almost there…",
+        "kabir's writing his notes…",
       ];
       setMessage(messages[Math.min(attempt, messages.length - 1)]);
 
@@ -649,7 +649,7 @@ export function NotesClient({
             onClick={() => router.push("/dashboard")}
             className="mt-6 rounded border border-slate-600/70 px-5 py-2 text-sm text-slate-300 hover:border-cyan-500/60 hover:text-white"
           >
-            Back to dashboard
+            back to dashboard
           </button>
         )}
       </div>
@@ -847,10 +847,10 @@ export function NotesClient({
                 style={{
                   background: CARD,
                   borderLeftWidth: 3,
-                  borderLeftColor: "#F59E0B",
+                  borderLeftColor: "#38BDF8",
                 }}
               >
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-400">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-cyan-400">
                   Rethink
                 </p>
                 <p className="mt-2 text-[15px] font-medium leading-snug text-[#E2E8F0]">
@@ -1050,7 +1050,7 @@ export function NotesClient({
         {/* CTAs */}
         <section className="mt-10 space-y-3">
           {sessionStartError ? (
-            <p className="rounded border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">
+            <p className="rounded border border-cyan-400/30 bg-violet-500/10 px-3 py-2 text-xs text-cyan-100">
               {sessionStartError}
             </p>
           ) : null}
@@ -1069,7 +1069,7 @@ export function NotesClient({
               className="flex w-full items-center justify-center gap-2 rounded-lg bg-cyan-600 px-5 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-500 disabled:opacity-50"
             >
               <Mic className="h-4 w-4" />
-              {restarting ? "Starting…" : "Practice again"}
+              {restarting ? "starting…" : "run it again"}
             </button>
           )}
           <button
@@ -1078,7 +1078,7 @@ export function NotesClient({
             onClick={() => void continueThisPractice()}
             className="flex w-full items-center justify-center rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-5 py-3.5 text-sm font-semibold text-cyan-100 transition-colors hover:bg-cyan-500/20 disabled:opacity-50"
           >
-            {continuing ? "Starting…" : "Continue this practice"}
+            {continuing ? "starting…" : "pick up where you left off"}
           </button>
           <button
             type="button"

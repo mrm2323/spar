@@ -13,7 +13,7 @@ export type MemoryTimelineItem = {
 };
 
 /**
- * Practice history for Memory settings: completed sessions + Kabir's notes summary.
+ * Practice history for “what kabir knows”: completed sessions + notes summary line.
  * Works without Supermemory (Supabase-only).
  */
 export async function GET() {

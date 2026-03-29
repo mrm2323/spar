@@ -22,14 +22,14 @@ export function EarlyAccessForm() {
       });
 
       if (!res.ok) {
-        throw new Error("Could not submit right now");
+        throw new Error("couldn't send that. try again?");
       }
 
       setStatus("success");
       setEmail("");
     } catch (err) {
       setStatus("error");
-      setError(err instanceof Error ? err.message : "Failed to submit");
+      setError(err instanceof Error ? err.message : "something broke. try again?");
     }
   }
 

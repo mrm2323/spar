@@ -18,6 +18,8 @@ export async function GET() {
 
   const snippet = lines[0]?.trim().slice(0, 280) || null;
   const peopleNames = await listKnownPeopleNames(userId);
+  /** Rough signal for nav badge: people profiles + one line if we have a snippet */
+  const memoryBadgeCount = peopleNames.length + (snippet ? 1 : 0);
 
-  return NextResponse.json({ snippet, peopleNames });
+  return NextResponse.json({ snippet, peopleNames, memoryBadgeCount });
 }

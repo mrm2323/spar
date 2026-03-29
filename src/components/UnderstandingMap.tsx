@@ -82,7 +82,8 @@ export function UnderstandingMap({
   const hasData = sessionCount > 0 || patterns.length > 0 || people.length > 0 || goalEntries.length > 0;
   if (!hasData) return null;
 
-  const CARD = "rounded-xl border border-slate-700/55 bg-[#0b1d3e]/50 shadow-[0_0_0_1px_rgba(15,23,42,0.4)]";
+  const CARD =
+    "rounded-2xl border border-white/[0.08] bg-[#12121a]/90 shadow-[0_0_0_1px_rgba(15,23,42,0.35)]";
 
   return (
     <section className={`${CARD} p-6`}>
@@ -105,7 +106,7 @@ export function UnderstandingMap({
             </div>
             <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-cyan-500/80 to-emerald-400/80 transition-all"
+                className="h-full rounded-full bg-gradient-to-r from-cyan-500/80 to-violet-500/75 transition-all"
                 style={{ width: `${item.value}%` }}
               />
             </div>

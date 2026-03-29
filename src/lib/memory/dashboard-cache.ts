@@ -268,3 +268,34 @@ export async function deleteUserMemoryCache(userId: string): Promise<void> {
   const supabase = createSupabaseAdmin();
   await supabase.from("user_memory_cache").delete().eq("user_id", userId);
 }
+
+/**
+ * Clears AI-generated pattern cards and legacy pattern fields without wiping portrait,
+ * Supermemory facts, or full cache. Patterns repopulate on the next cache rebuild
+ * (e.g. after a completed session when the session fingerprint changes).
+ */
+export async function clearPatternRecognition(
+  userId: string
+): Promise<{ ok: boolean }> {
+  const supabase = createSupabaseAdmin();
+
+  const { error: cacheErr } = await supabase
+    .from("user_memory_cache")
+    .update({ patterns_json: [] })
+    .eq("user_id", userId);
+
+  if (cacheErr) {
+    console.error("[dashboard-cache] clear patterns_json", cacheErr);
+  }
+
+  const { error: memErr } = await supabase
+    .from("user_memory")
+    .update({ weaknesses: [], patterns: [] })
+    .eq("user_id", userId);
+
+  if (memErr) {
+    console.error("[dashboard-cache] clear user_memory patterns", memErr);
+  }
+
+  return { ok: !cacheErr };
+}

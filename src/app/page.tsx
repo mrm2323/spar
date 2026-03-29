@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { clerkClient } from "@clerk/nextjs/server";
-import { LandingHero } from "@/components/landing/LandingHero";
+import { GenZLanding } from "@/components/landing/GenZLanding";
 import {
   getEmailBetaStatus,
   isBetaBypassUserId,
@@ -11,7 +11,13 @@ export default async function LandingPage() {
   const { userId } = await auth();
 
   if (!userId) {
-    return <LandingHero isSignedIn={false} isApproved={false} />;
+    return (
+      <GenZLanding
+        isSignedIn={false}
+        isApproved={false}
+        waitlistStatus="unknown"
+      />
+    );
   }
 
   let isApproved = false;
@@ -41,7 +47,7 @@ export default async function LandingPage() {
   }
 
   return (
-    <LandingHero
+    <GenZLanding
       isSignedIn={true}
       isApproved={isApproved}
       waitlistStatus={waitlistStatus}
