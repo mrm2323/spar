@@ -28,7 +28,9 @@ type ContextSummary = {
   files?: string[];
 };
 
-const SILENCE_NUDGE_SECONDS = 20;
+/** Idle seconds: first nudge → second nudge → auto-end (30s total silence cap). */
+const SILENCE_NUDGE_1_SECONDS = 10;
+const SILENCE_NUDGE_2_SECONDS = 20;
 const SILENCE_AUTO_END_SECONDS = 30;
 
 function hasNegatedEndIntent(text: string): boolean {
@@ -92,7 +94,8 @@ export default function SessionPage() {
   const [silenceBanner, setSilenceBanner] = useState<string | null>(null);
   const replayStartSentRef = useRef(false);
   const lastUserActivityRef = useRef(Date.now());
-  const silenceNudgedRef = useRef(false);
+  /** 0 = no nudge yet, 1 = first nudge sent, 2 = second nudge sent, 3 = ended */
+  const silenceStageRef = useRef(0);
   const autoEndedForSilenceRef = useRef(false);
   const pendingEndConfirmUntilRef = useRef<number | null>(null);
   const endSessionRef = useRef<
@@ -111,7 +114,7 @@ export default function SessionPage() {
 
   const markUserActivity = useCallback(() => {
     lastUserActivityRef.current = Date.now();
-    silenceNudgedRef.current = false;
+    silenceStageRef.current = 0;
     autoEndedForSilenceRef.current = false;
     setSilenceBanner(null);
   }, []);
@@ -366,16 +369,22 @@ export default function SessionPage() {
         return;
       }
       const idleSeconds = (Date.now() - lastUserActivityRef.current) / 1000;
+      const vapi = vapiRef.current;
 
-      if (idleSeconds >= SILENCE_NUDGE_SECONDS && !silenceNudgedRef.current) {
-        silenceNudgedRef.current = true;
-        setSilenceBanner("Still there? I will end this session in 10 seconds if it stays silent.");
+      if (
+        idleSeconds >= SILENCE_NUDGE_1_SECONDS &&
+        silenceStageRef.current === 0
+      ) {
+        silenceStageRef.current = 1;
+        setSilenceBanner(
+          "Still there? Another 20 seconds of silence and we’ll wrap."
+        );
         appendLiveMessage({
           role: "system",
           source: "status",
-          content: "Silence detected: we will wrap in 10 seconds unless you continue.",
+          content:
+            "Silence: first nudge — session ends after 30 seconds total silence unless they speak.",
         });
-        const vapi = vapiRef.current;
         if (vapi) {
           vapi.send({
             type: "add-message",
@@ -383,14 +392,42 @@ export default function SessionPage() {
             message: {
               role: "system",
               content:
-                "The user has been silent for a while. Give a very short and kind nudge and mention the session will auto-end after 30 seconds of silence.",
+                "The user has been quiet ~10 seconds after you spoke. Give ONE short, warm check-in (one sentence). Mention you’ll need to end the session if they’re still quiet for about 20 more seconds (30 seconds total silence).",
             },
           });
         }
       }
 
-      if (idleSeconds >= SILENCE_AUTO_END_SECONDS && !autoEndedForSilenceRef.current) {
+      if (
+        idleSeconds >= SILENCE_NUDGE_2_SECONDS &&
+        silenceStageRef.current === 1
+      ) {
+        silenceStageRef.current = 2;
+        setSilenceBanner("Last check — wrapping in ~10 seconds if it stays quiet.");
+        appendLiveMessage({
+          role: "system",
+          source: "status",
+          content: "Silence: second nudge — auto-end in ~10s if still quiet.",
+        });
+        if (vapi) {
+          vapi.send({
+            type: "add-message",
+            triggerResponseEnabled: true,
+            message: {
+              role: "system",
+              content:
+                "Still silence ~20 seconds. One more very brief nudge (single sentence). If no reply, you’ll stop — the session auto-ends at 30 seconds of silence total.",
+            },
+          });
+        }
+      }
+
+      if (
+        idleSeconds >= SILENCE_AUTO_END_SECONDS &&
+        !autoEndedForSilenceRef.current
+      ) {
         autoEndedForSilenceRef.current = true;
+        silenceStageRef.current = 3;
         setSilenceBanner("Ending now after 30 seconds of silence.");
         void endSessionRef.current?.("silence_auto");
       }

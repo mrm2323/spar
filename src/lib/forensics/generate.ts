@@ -154,6 +154,8 @@ Rules for readiness (pick what fits; paraphrase if needed; never numbers):
 
 11. Never use coaching clichés: 'great step', 'remember the goal is', 'key shift'. Never generic excited-opportunity openings.
 
+12. When the transcript has real back-and-forth (roughly a minute or more of practice), you MUST include at least 2 keyHighlights and at least 2 actionItems unless rule 2d applies (too short / no substance). Do not return empty arrays for those fields when there was enough dialogue to learn from.
+
 FORMAT YOUR RESPONSE AS JSON ONLY:
 {
   "kabirTake": "string",

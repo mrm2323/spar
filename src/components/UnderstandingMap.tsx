@@ -1,9 +1,14 @@
 "use client";
 
 import { useMemo } from "react";
+import Link from "next/link";
+import {
+  computeKabirInsightMetrics,
+  type KabirInsightKey,
+} from "@/lib/memory/kabir-insight-scores";
 
 type InsightScore = {
-  key: string;
+  key: KabirInsightKey;
   label: string;
   value: number;
   detail: string;
@@ -23,53 +28,43 @@ export function UnderstandingMap({
   goalEntries,
 }: UnderstandingMapProps) {
   const insightScores = useMemo<InsightScore[]>(() => {
-    // Consistency: 12% per session, capped at 100%, starting from 0
-    const consistency = Math.min(100, Math.max(0, sessionCount * 12));
-
-    // Pattern clarity: 5% per pattern session count, capped at 100%, starting from 0
-    const patternClarity = Math.min(
-      100,
-      patterns.reduce((acc, p) => acc + Math.min(22, p.sessionCount * 5), 0)
-    );
-
-    // People depth: 16% per person + 8% for those with explicit relationships
-    const peopleDepth = Math.min(
-      100,
-      people.length * 16 + people.filter((p) => p.relationship).length * 8
-    );
-
-    // Goal follow-through: % of goals where Kabir noticed progress
     const progressedGoals = goalEntries.filter(
       (g) => typeof g.metadata?.kabirNoticedAt === "string" && g.metadata.kabirNoticedAt
     ).length;
-    const goalFollowThrough =
-      goalEntries.length === 0
-        ? 0
-        : Math.min(100, Math.round((progressedGoals / goalEntries.length) * 100));
+    const metrics = computeKabirInsightMetrics({
+      sessionCount,
+      patterns,
+      people,
+      goalEntries,
+    });
+    const byKey = Object.fromEntries(metrics.map((m) => [m.key, m.value])) as Record<
+      KabirInsightKey,
+      number
+    >;
 
     return [
       {
         key: "consistency",
         label: "Conversation consistency",
-        value: consistency,
+        value: byKey.consistency,
         detail: `${sessionCount} completed session${sessionCount === 1 ? "" : "s"}`,
       },
       {
         key: "patterns",
         label: "Pattern clarity",
-        value: patternClarity,
+        value: byKey.patterns,
         detail: `${patterns.length} communication pattern${patterns.length === 1 ? "" : "s"} tracked`,
       },
       {
         key: "people",
         label: "People context depth",
-        value: peopleDepth,
+        value: byKey.people,
         detail: `${people.length} person${people.length === 1 ? "" : "s"} in memory`,
       },
       {
         key: "goals",
         label: "Goal follow-through",
-        value: goalFollowThrough,
+        value: byKey.goals,
         detail:
           goalEntries.length === 0
             ? "No goals added yet"
@@ -91,7 +86,14 @@ export function UnderstandingMap({
         Kabir understanding map
       </h2>
       <p className="mt-2 text-xs text-slate-500">
-        How much context Kabir has built across your sessions.
+        How much context Kabir has built across your sessions. Same numbers as{" "}
+        <Link
+          href="/dashboard/memory"
+          className="text-cyan-400/90 underline decoration-cyan-500/30 underline-offset-2 hover:text-cyan-300"
+        >
+          what kabir knows
+        </Link>
+        .
       </p>
 
       <div className="mt-5 grid gap-3 sm:grid-cols-2">

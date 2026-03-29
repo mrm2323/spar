@@ -270,6 +270,36 @@ export async function deleteUserMemoryCache(userId: string): Promise<void> {
 }
 
 /**
+ * Clears Supabase-stored coaching artifacts. Always runs for "forget everything"
+ * even when Supermemory is disabled or fails — fixes empty moat UX in dev.
+ */
+export async function wipeLocalUserMemoryArtifacts(userId: string): Promise<{
+  ok: boolean;
+}> {
+  const supabase = createSupabaseAdmin();
+  await supabase.from("user_memory_cache").delete().eq("user_id", userId);
+
+  const now = new Date().toISOString();
+  const { error: upErr } = await supabase.from("user_memory").upsert(
+    {
+      user_id: userId,
+      kabir_memory: "",
+      patterns: [],
+      weaknesses: [],
+      improvements: [],
+      updated_at: now,
+    },
+    { onConflict: "user_id" }
+  );
+
+  if (upErr) {
+    console.error("[dashboard-cache] wipe user_memory", upErr);
+  }
+
+  return { ok: !upErr };
+}
+
+/**
  * Clears AI-generated pattern cards and legacy pattern fields without wiping portrait,
  * Supermemory facts, or full cache. Patterns repopulate on the next cache rebuild
  * (e.g. after a completed session when the session fingerprint changes).

@@ -7,12 +7,23 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export async function getRecentSessionSummariesForPrompt(
   supabase: SupabaseClient,
   userId: string,
-  limit = 10
+  limit = 22
 ): Promise<string> {
+  const { data: memoryRow } = await supabase
+    .from("user_memory")
+    .select("phone_number")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  const userIds = [userId];
+  if (memoryRow?.phone_number) {
+    userIds.push(`phone:${memoryRow.phone_number}`);
+  }
+
   const { data: sessions, error } = await supabase
     .from("sessions")
     .select("id, context, ended_at, created_at")
-    .eq("user_id", userId)
+    .in("user_id", userIds)
     .order("created_at", { ascending: false })
     .limit(limit);
 

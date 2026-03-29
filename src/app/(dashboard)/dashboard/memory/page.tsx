@@ -10,6 +10,10 @@ import {
   Lock,
   Target,
 } from "lucide-react";
+import {
+  computeKabirInsightMetrics,
+  type KabirInsightKey,
+} from "@/lib/memory/kabir-insight-scores";
 
 type PatternCard = {
   name: string;
@@ -119,6 +123,9 @@ export default function MemoryDashboardPage() {
   const [goalSaving, setGoalSaving] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [clearingPatterns, setClearingPatterns] = useState(false);
+  const [memoryActionBanner, setMemoryActionBanner] = useState<string | null>(
+    null
+  );
 
   const loadProfile = useCallback(async () => {
     setProfileLoading(true);
@@ -254,17 +261,32 @@ export default function MemoryDashboardPage() {
   async function clearAllMemories() {
     if (!confirm("make kabir forget everything on this account? can't undo.")) return;
     setClearing(true);
+    setMemoryActionBanner(null);
     try {
       const res = await fetch("/api/memory", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "forget-all" }),
       });
-      if (res.ok) {
-        await loadEntriesAndPref();
-        await loadProfile();
-        await loadPeople();
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+      };
+      if (!res.ok || data.ok === false) {
+        setMemoryActionBanner(
+          typeof data.error === "string"
+            ? data.error
+            : "couldn't clear everything. try again?"
+        );
+        return;
       }
+      setMemoryActionBanner(
+        "cleared. kabir's coaching memory on this account is wiped."
+      );
+      await loadEntriesAndPref();
+      await loadProfile();
+      await loadPeople();
+      await loadTimeline();
     } finally {
       setClearing(false);
     }
@@ -278,13 +300,21 @@ export default function MemoryDashboardPage() {
     )
       return;
     setClearingPatterns(true);
+    setMemoryActionBanner(null);
     try {
       const res = await fetch("/api/memory", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "clear-patterns" }),
       });
-      if (res.ok) await loadProfile();
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean };
+      if (!res.ok || data.ok === false) {
+        setMemoryActionBanner("couldn't reset patterns. try again?");
+        return;
+      }
+      setMemoryActionBanner("pattern labels cleared.");
+      await loadProfile();
+      await loadTimeline();
     } finally {
       setClearingPatterns(false);
     }
@@ -297,74 +327,48 @@ export default function MemoryDashboardPage() {
     return `${n} conversations deep. kabir updates this after every practice.`;
   }, [sessionCount]);
 
-  /**
-   * "Understanding map" percentages — each is 0–100 on a defined scale (not arbitrary multiples).
-   */
+  /** Same 0–100 math as the dashboard “Kabir understanding map” — see `computeKabirInsightMetrics`. */
   const insightScores = useMemo(() => {
-    const SESSIONS_FOR_FULL = 25;
-    const consistency =
-      sessionCount <= 0
-        ? 0
-        : Math.min(
-            100,
-            Math.round(
-              (Math.min(sessionCount, SESSIONS_FOR_FULL) / SESSIONS_FOR_FULL) * 100
-            )
-          );
-
-    const patternClarity =
-      patterns.length === 0
-        ? Math.min(24, sessionCount * 4)
-        : Math.min(100, Math.round((patterns.length / 4) * 100));
-
-    const PEOPLE_FOR_FULL = 5;
-    const peopleDepth =
-      people.length === 0
-        ? Math.min(20, sessionCount * 3)
-        : Math.min(
-            100,
-            Math.round(
-              (Math.min(people.length, PEOPLE_FOR_FULL) / PEOPLE_FOR_FULL) * 100
-            )
-          );
-
     const progressedGoals = goalEntries.filter(
       (g) => typeof g.metadata?.kabirNoticedAt === "string" && g.metadata.kabirNoticedAt
     ).length;
-    const goalFollowThrough =
-      goalEntries.length === 0
-        ? 0
-        : Math.min(
-            100,
-            Math.round((progressedGoals / goalEntries.length) * 100)
-          );
+    const metrics = computeKabirInsightMetrics({
+      sessionCount,
+      patterns,
+      people,
+      goalEntries,
+    });
+    const byKey = Object.fromEntries(metrics.map((m) => [m.key, m.value])) as Record<
+      KabirInsightKey,
+      number
+    >;
 
     return [
       {
-        key: "consistency",
+        key: "consistency" as const,
         label: "showing up",
-        value: consistency,
-        detail: `${sessionCount} practice${sessionCount === 1 ? "" : "s"} · fills in as you hit ~25`,
+        value: byKey.consistency,
+        detail: `${sessionCount} practice${sessionCount === 1 ? "" : "s"} · same scale as dashboard map`,
       },
       {
-        key: "patterns",
+        key: "patterns" as const,
         label: "patterns kabir sees",
-        value: patternClarity,
+        value: byKey.patterns,
         detail:
           patterns.length === 0
             ? "none yet — give it a few reps"
             : `${patterns.length} of up to 4 pattern${patterns.length === 1 ? "" : "s"} surfaced`,
       },
       {
-        key: "people",
+        key: "people" as const,
         label: "people you've named",
-        value: peopleDepth,
+        value: byKey.people,
         detail: `${people.length} person${people.length === 1 ? "" : "s"} · kabir tracks up to 5`,
       },
       {
-        key: "goals",
+        key: "goals" as const,
         label: "goals you asked him to hold",
-        value: goalFollowThrough,
+        value: byKey.goals,
         detail:
           goalEntries.length === 0
             ? "add one when you're ready"
@@ -388,6 +392,11 @@ export default function MemoryDashboardPage() {
               dateStyle: "medium",
               timeStyle: "short",
             })}
+          </p>
+        ) : null}
+        {memoryActionBanner ? (
+          <p className="mt-4 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-100/95">
+            {memoryActionBanner}
           </p>
         ) : null}
       </header>
@@ -705,9 +714,9 @@ export default function MemoryDashboardPage() {
           <div>
             <button
               type="button"
-              disabled={clearingPatterns}
+              disabled={clearingPatterns || clearing}
               onClick={() => void clearPatternsOnly()}
-              className="text-xs text-cyan-300/90 underline decoration-cyan-500/35 underline-offset-2 transition-colors hover:text-cyan-200"
+              className="text-xs text-cyan-300/90 underline decoration-cyan-500/35 underline-offset-2 transition-colors hover:text-cyan-200 disabled:opacity-40"
             >
               {clearingPatterns ? "clearing patterns…" : "reset pattern recognition"}
             </button>
@@ -718,9 +727,9 @@ export default function MemoryDashboardPage() {
           <div>
             <button
               type="button"
-              disabled={clearing}
+              disabled={clearing || clearingPatterns}
               onClick={() => void clearAllMemories()}
-              className="text-xs text-rose-400/80 underline decoration-rose-500/30 underline-offset-2 transition-colors hover:text-rose-300"
+              className="text-xs text-rose-400/80 underline decoration-rose-500/30 underline-offset-2 transition-colors hover:text-rose-300 disabled:opacity-40"
             >
               {clearing ? "clearing…" : "make kabir forget everything"}
             </button>

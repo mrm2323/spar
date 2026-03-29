@@ -19,6 +19,8 @@ type GenZLandingProps = {
   isSignedIn: boolean;
   isApproved: boolean;
   waitlistStatus: BetaWaitlistStatus | "unknown";
+  /** Completed practice sessions (for CTA copy). */
+  completedSessionCount: number;
 };
 
 function TryKabirHref({ isSignedIn, isApproved }: GenZLandingProps) {
@@ -63,7 +65,7 @@ function ScrollReveal({
 
 export function GenZLanding(props: GenZLandingProps) {
   const tryHref = TryKabirHref(props);
-  const { isSignedIn, isApproved, waitlistStatus } = props;
+  const { isSignedIn, isApproved, waitlistStatus, completedSessionCount } = props;
 
   return (
     <div
@@ -167,7 +169,11 @@ export function GenZLanding(props: GenZLandingProps) {
               talk to kabir — it&apos;s free
             </Link>
             <p className="text-[11px]" style={{ color: MUTED }}>
-              no signup needed for your first session
+              {isSignedIn && isApproved
+                ? "open the app whenever you’re ready to practice."
+                : isSignedIn && !isApproved
+                  ? "we’ll email you when your account can use kabir."
+                  : "sign in free — your first practice is on us."}
             </p>
           </div>
         </div>
@@ -247,7 +253,7 @@ export function GenZLanding(props: GenZLandingProps) {
           {[
             {
               t: "tell kabir what's coming up",
-              m: "a roommate talk. a salary ask. a date. whatever you're avoiding.",
+              m: "a roommate talk. a salary ask. a date. whatever you’re gearing up for.",
             },
             {
               t: "practice it out loud",
@@ -337,7 +343,11 @@ export function GenZLanding(props: GenZLandingProps) {
               color: BG,
             }}
           >
-            start your first session
+            {isSignedIn && isApproved
+              ? completedSessionCount > 0
+                ? "continue practicing"
+                : "open the app"
+              : "sign in to talk to kabir"}
           </Link>
         </div>
       </section>
@@ -354,13 +364,10 @@ export function GenZLanding(props: GenZLandingProps) {
           <p className="mt-2 text-xs" style={{ color: MUTED }}>
             your conversations are encrypted and never shared.
           </p>
-          <div className="mt-6 flex justify-center gap-6 text-xs">
+          <div className="mt-6 flex justify-center text-xs">
             <a href="mailto:kabir.spar.ai@gmail.com" className="underline decoration-white/15 underline-offset-2" style={{ color: MUTED }}>
               contact
             </a>
-            <span style={{ color: MUTED }} className="opacity-40">
-              privacy soon
-            </span>
           </div>
         </div>
       </footer>

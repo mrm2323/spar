@@ -3,8 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 import memoryService from "@/services/memory";
 import {
   clearPatternRecognition,
-  deleteUserMemoryCache,
+  wipeLocalUserMemoryArtifacts,
 } from "@/lib/memory/dashboard-cache";
+import { hasSupermemory } from "@/lib/kabir/memory";
 import { getMemoryPreference } from "@/lib/memory/preferences";
 
 export const runtime = "nodejs";
@@ -98,9 +99,20 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: !!result, memory: result || null });
       }
       case "forget-all": {
-        const ok = await memoryService.forgetAll(userId);
-        await deleteUserMemoryCache(userId);
-        return NextResponse.json({ ok });
+        const local = await wipeLocalUserMemoryArtifacts(userId);
+        let remoteOk = true;
+        if (hasSupermemory()) {
+          try {
+            remoteOk = await memoryService.forgetAll(userId);
+          } catch (e) {
+            console.error("[memory] forget-all supermemory", e);
+            remoteOk = false;
+          }
+        }
+        return NextResponse.json({
+          ok: local.ok,
+          supermemoryCleared: remoteOk,
+        });
       }
       case "clear-patterns": {
         const { ok } = await clearPatternRecognition(userId);

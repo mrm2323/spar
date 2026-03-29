@@ -521,9 +521,18 @@ export function NotesClient({
 
   const showYourWords = useMemo(() => {
     const sec = session?.duration_seconds;
+    const hasMoment =
+      Boolean(
+        strongest.quote?.trim() ||
+          weakest.quote?.trim() ||
+          (notes?.whatWorked &&
+            typeof notes.whatWorked === "object" &&
+            (notes.whatWorked as { quote?: string }).quote)
+      );
+    if (hasMoment) return true;
     if (typeof sec !== "number" || !Number.isFinite(sec)) return false;
-    return sec > 180;
-  }, [session?.duration_seconds]);
+    return sec >= 60;
+  }, [session?.duration_seconds, notes, strongest.quote, weakest.quote]);
 
   const wordPattern = useMemo((): WordPattern => {
     const wp = notes?.wordPattern;

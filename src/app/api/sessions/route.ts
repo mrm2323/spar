@@ -113,8 +113,14 @@ export async function GET() {
     thread_session_ids: t.sessions.map((s) => s.id),
   }));
 
+  const practiceSessionCount = Math.max(
+    memoryFull?.total_sessions ?? 0,
+    threaded.length
+  );
+
   return NextResponse.json({
     sessions: threaded,
+    practiceSessionCount,
     cap,
     pattern:
       memoryFull && (memoryFull.total_sessions ?? 0) >= 3

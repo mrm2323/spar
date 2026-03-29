@@ -433,7 +433,7 @@ export async function buildFullKabirContext(
 ): Promise<string> {
   const [bundle, dbHistory] = await Promise.all([
     buildKabirMemoryBundle(userId, options),
-    getRecentSessionSummariesForPrompt(supabase, userId, 12),
+    getRecentSessionSummariesForPrompt(supabase, userId, 22),
   ]);
 
   const parts: string[] = [];

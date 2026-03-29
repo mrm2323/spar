@@ -55,7 +55,7 @@ function dashboardGreeting(
   if (h >= 5 && h < 12) return `morning, ${name}. what's on your mind today?`;
   if (h >= 12 && h < 17) return `hey ${name}. anything coming up?`;
   if (h >= 17 && h < 22) return `hey ${name}. anything coming up?`;
-  return `late night, ${name}? what conversation are you avoiding?`;
+  return `late night, ${name}? what conversation are you looking forward to?`;
 }
 
 function relativeSessionTime(iso: string | null): string {
@@ -91,6 +91,8 @@ function DashboardInner() {
   const [loading, setLoading] = useState(false);
   const [showAllSessions, setShowAllSessions] = useState(false);
   const [sessions, setSessions] = useState<PastSession[]>([]);
+  /** From user_memory.total_sessions — avoids “first time?” while history list is still syncing */
+  const [practiceSessionCount, setPracticeSessionCount] = useState(0);
   const [pattern, setPattern] = useState<PatternInsight | null>(null);
   const [files, setFiles] = useState<ProcessedFile[]>([]);
   const [fileProcessing, setFileProcessing] = useState(false);
@@ -180,6 +182,9 @@ function DashboardInner() {
     ])
       .then(([sessionsData, profileData, peopleData, memoryData]) => {
         if (sessionsData.sessions) setSessions(sessionsData.sessions);
+        if (typeof sessionsData.practiceSessionCount === "number") {
+          setPracticeSessionCount(sessionsData.practiceSessionCount);
+        }
         if (sessionsData.pattern) setPattern(sessionsData.pattern);
         if (sessionsData.cap) setCapStatus(sessionsData.cap);
         if (Array.isArray(profileData.patterns)) setPatterns(profileData.patterns);
@@ -385,32 +390,29 @@ function DashboardInner() {
             </p>
           ) : null}
 
-          {!loading && (
-            <button
-              type="button"
-              onClick={startSession}
-              disabled={loading}
-              aria-label="talk to kabir"
-              className="group relative mx-auto mt-10 flex h-52 w-52 cursor-pointer items-center justify-center rounded-full border border-cyan-500/35 bg-cyan-500/[0.07] transition-all duration-300 hover:scale-[1.01] hover:border-violet-400/40 hover:bg-cyan-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0A0A0F] disabled:cursor-not-allowed disabled:opacity-50 sm:h-56 sm:w-56"
-            >
-              <span className="pointer-events-none absolute inset-0 rounded-full bg-gradient-to-br from-cyan-400/22 to-violet-600/12 blur-3xl" />
-              <span className="pointer-events-none absolute inset-4 rounded-full border border-cyan-200/10" />
-              <span className="pointer-events-none absolute inset-0 rounded-full animate-pulse-slow border border-violet-400/25" />
-              {loading ? (
-                <Loader2 className="relative z-10 h-11 w-11 animate-spin text-cyan-200" />
-              ) : (
-                <div className="relative z-10 flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 to-violet-500 text-[#0A0A0F] shadow-[0_0_38px_rgba(56,189,248,0.38)] transition-transform duration-300 group-hover:scale-[1.04] sm:h-[5.5rem] sm:w-[5.5rem]">
-                  <Mic className="h-10 w-10 sm:h-11 sm:w-11" />
-                </div>
-              )}
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={startSession}
+            disabled={loading}
+            aria-label="talk to kabir"
+            aria-busy={loading}
+            className="group relative mx-auto mt-10 flex h-52 w-52 cursor-pointer items-center justify-center rounded-full border border-cyan-500/35 bg-cyan-500/[0.07] transition-all duration-300 hover:scale-[1.01] hover:border-violet-400/40 hover:bg-cyan-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0A0A0F] disabled:cursor-not-allowed disabled:opacity-50 sm:h-56 sm:w-56"
+          >
+            <span className="pointer-events-none absolute inset-0 rounded-full bg-gradient-to-br from-cyan-400/22 to-violet-600/12 blur-3xl" />
+            <span className="pointer-events-none absolute inset-4 rounded-full border border-cyan-200/10" />
+            <span className="pointer-events-none absolute inset-0 rounded-full animate-pulse-slow border border-violet-400/25" />
+            {loading ? (
+              <Loader2 className="relative z-10 h-11 w-11 animate-spin text-cyan-200" />
+            ) : (
+              <div className="relative z-10 flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 to-violet-500 text-[#0A0A0F] shadow-[0_0_38px_rgba(56,189,248,0.38)] transition-transform duration-300 group-hover:scale-[1.04] sm:h-[5.5rem] sm:w-[5.5rem]">
+                <Mic className="h-10 w-10 sm:h-11 sm:w-11" />
+              </div>
+            )}
+          </button>
 
-          {!loading && (
-            <p className="mx-auto mt-5 max-w-xs text-sm" style={{ color: "#94A3B8" }}>
-              tap to talk to kabir
-            </p>
-          )}
+          <p className="mx-auto mt-5 max-w-xs text-sm" style={{ color: "#94A3B8" }}>
+            {loading ? "starting…" : "tap to talk to kabir"}
+          </p>
 
           {!loading && (
             <details className="mx-auto mt-6 w-full max-w-xl text-left [&_summary::-webkit-details-marker]:hidden">
@@ -658,9 +660,14 @@ function DashboardInner() {
               </div>
             )}
           </>
+        ) : practiceSessionCount > 0 ? (
+          <p className="text-center text-sm leading-relaxed text-[#94A3B8]">
+            your last practice is still saving to history, or refresh this page. you’ve
+            already completed at least one session — kabir has it.
+          </p>
         ) : (
           <p className="text-center text-sm leading-relaxed text-[#94A3B8]">
-            first time? tell kabir what&apos;s coming up. he&apos;s heard it all.
+            new here? tell kabir what&apos;s coming up. he&apos;s heard it all.
           </p>
         )}
       </div>

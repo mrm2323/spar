@@ -8,13 +8,22 @@ export default async function HistoryPage() {
   if (!userId) return null;
 
   const supabase = createSupabaseAdmin();
-  const { data: sessions } = await supabase
-    .from("sessions")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("status", "completed")
-    .order("ended_at", { ascending: false })
-    .limit(50);
+  const [{ data: sessions }, { data: memoryRow }] = await Promise.all([
+    supabase
+      .from("sessions")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("status", "completed")
+      .order("ended_at", { ascending: false })
+      .limit(50),
+    supabase
+      .from("user_memory")
+      .select("total_sessions")
+      .eq("user_id", userId)
+      .maybeSingle(),
+  ]);
+
+  const hasPracticeOnRecord = (memoryRow?.total_sessions ?? 0) > 0;
 
   const formatDuration = (seconds: number | null) => {
     if (!seconds) return "—";
@@ -34,7 +43,11 @@ export default async function HistoryPage() {
 
       {!sessions || sessions.length === 0 ? (
         <div className="rounded-xl border border-slate-700/50 bg-slate-900/35 p-12 text-center">
-          <p className="text-slate-400">first time? tell kabir what&apos;s coming up.</p>
+          <p className="text-slate-400">
+            {hasPracticeOnRecord
+              ? "your completed sessions should appear here once they finish saving. refresh, or open kabir's notes from the dashboard."
+              : "new here? tell kabir what's coming up."}
+          </p>
           <Link
             href="/dashboard"
             className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-cyan-400/95 hover:text-violet-300"

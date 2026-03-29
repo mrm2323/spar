@@ -1,5 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { clerkClient } from "@clerk/nextjs/server";
+import { createSupabaseAdmin } from "@/lib/supabase/server";
 import { GenZLanding } from "@/components/landing/GenZLanding";
 import {
   getEmailBetaStatus,
@@ -16,6 +17,7 @@ export default async function LandingPage() {
         isSignedIn={false}
         isApproved={false}
         waitlistStatus="unknown"
+        completedSessionCount={0}
       />
     );
   }
@@ -46,11 +48,25 @@ export default async function LandingPage() {
     }
   }
 
+  let completedSessionCount = 0;
+  try {
+    const supabase = createSupabaseAdmin();
+    const { count } = await supabase
+      .from("sessions")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("status", "completed");
+    completedSessionCount = typeof count === "number" ? count : 0;
+  } catch (e) {
+    console.error("[landing] session count", e);
+  }
+
   return (
     <GenZLanding
       isSignedIn={true}
       isApproved={isApproved}
       waitlistStatus={waitlistStatus}
+      completedSessionCount={completedSessionCount}
     />
   );
 }
