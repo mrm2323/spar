@@ -20,7 +20,7 @@ const ibmMono = IBM_Plex_Mono({
 export const metadata: Metadata = {
   title: "spar — talk it through with kabir before it counts",
   description:
-    "the friend you call at 11pm when you're spiraling about tomorrow's conversation. practice out loud. get kabir's notes. built for international students and anyone who needs the words.",
+    "the friend you call at 11pm when you're spiraling about tomorrow's conversation. practice out loud. get kabir's notes. built for students and anyone who needs the words.",
 };
 
 export default function RootLayout({

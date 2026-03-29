@@ -3,15 +3,15 @@ import { createSupabaseAdmin } from "@/lib/supabase/server";
 import { normalizeBetaEmail } from "@/lib/beta-access";
 import { notifyWaitlistSignup } from "@/lib/waitlist-notify";
 
-/** Same JSON whether new row, duplicate, or validation edge — avoids email enumeration. */
 const OK = { ok: true as const };
+const FAIL = { ok: false as const };
 
 export async function POST(req: Request) {
   let body: unknown;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json(OK);
+    return NextResponse.json(FAIL, { status: 400 });
   }
 
   const raw =
@@ -23,12 +23,12 @@ export async function POST(req: Request) {
       : "";
 
   if (!raw) {
-    return NextResponse.json(OK);
+    return NextResponse.json(FAIL, { status: 400 });
   }
 
   const email = normalizeBetaEmail(raw);
   if (!email.includes("@") || email.length > 254) {
-    return NextResponse.json(OK);
+    return NextResponse.json(FAIL, { status: 400 });
   }
 
   const supabase = createSupabaseAdmin();
@@ -39,17 +39,17 @@ export async function POST(req: Request) {
 
   // 23505 = unique_violation — same email again; no email to owner
   if (error?.code === "23505") {
-    return NextResponse.json(OK);
+    return NextResponse.json({ ...OK, duplicate: true as const });
   }
 
   if (error) {
     console.error("[waitlist] insert:", error.message, error.code);
-    return NextResponse.json(OK);
+    return NextResponse.json(FAIL, { status: 500 });
   }
 
   void notifyWaitlistSignup(email).catch((err) => {
     console.error("[waitlist] notify email failed:", err);
   });
 
-  return NextResponse.json(OK);
+  return NextResponse.json({ ...OK, submitted: true as const });
 }

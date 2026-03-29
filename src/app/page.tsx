@@ -24,6 +24,7 @@ export default async function LandingPage() {
 
   let isApproved = false;
   let waitlistStatus: BetaWaitlistStatus | "unknown" = "unknown";
+  let signedInEmail: string | null = null;
 
   if (isBetaBypassUserId(userId)) {
     isApproved = true;
@@ -36,6 +37,7 @@ export default async function LandingPage() {
         user.primaryEmailAddress?.emailAddress ??
         user.emailAddresses[0]?.emailAddress ??
         "";
+      signedInEmail = email || null;
 
       if (email) {
         waitlistStatus = await getEmailBetaStatus(email);
@@ -67,6 +69,7 @@ export default async function LandingPage() {
       isApproved={isApproved}
       waitlistStatus={waitlistStatus}
       completedSessionCount={completedSessionCount}
+      signedInEmail={signedInEmail}
     />
   );
 }

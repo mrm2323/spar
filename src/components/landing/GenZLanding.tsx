@@ -21,6 +21,8 @@ type GenZLandingProps = {
   waitlistStatus: BetaWaitlistStatus | "unknown";
   /** Completed practice sessions (for CTA copy). */
   completedSessionCount: number;
+  /** Signed-in user's primary email (used for one-click waitlist join). */
+  signedInEmail?: string | null;
 };
 
 function TryKabirHref({ isSignedIn, isApproved }: GenZLandingProps) {
@@ -65,7 +67,38 @@ function ScrollReveal({
 
 export function GenZLanding(props: GenZLandingProps) {
   const tryHref = TryKabirHref(props);
-  const { isSignedIn, isApproved, waitlistStatus, completedSessionCount } = props;
+  const {
+    isSignedIn,
+    isApproved,
+    waitlistStatus,
+    completedSessionCount,
+    signedInEmail,
+  } = props;
+  const [waitlistJoinState, setWaitlistJoinState] = useState<
+    "idle" | "submitting" | "success" | "error"
+  >("idle");
+
+  const canJoinWaitlistFromBanner =
+    isSignedIn &&
+    !isApproved &&
+    Boolean(signedInEmail) &&
+    (waitlistStatus === "unknown" || waitlistStatus === "none" || waitlistStatus === "rejected");
+
+  async function joinWaitlistWithSignedInEmail() {
+    if (!signedInEmail || waitlistJoinState === "submitting") return;
+    setWaitlistJoinState("submitting");
+    try {
+      const res = await fetch("/api/waitlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: signedInEmail }),
+      });
+      if (!res.ok) throw new Error("waitlist_join_failed");
+      setWaitlistJoinState("success");
+    } catch {
+      setWaitlistJoinState("error");
+    }
+  }
 
   return (
     <div
@@ -123,6 +156,27 @@ export function GenZLanding(props: GenZLandingProps) {
               : waitlistStatus === "rejected"
                 ? "this account doesn't have access yet. reach out if that feels wrong."
                 : "your account isn't cleared for the beta yet. hang tight or join the waitlist with this email."}
+            {canJoinWaitlistFromBanner ? (
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={() => void joinWaitlistWithSignedInEmail()}
+                  disabled={waitlistJoinState === "submitting" || waitlistJoinState === "success"}
+                  className="rounded-full border border-cyan-400/45 bg-cyan-500/10 px-4 py-1.5 text-xs font-medium text-cyan-100 transition-colors hover:bg-cyan-500/20 disabled:opacity-60"
+                >
+                  {waitlistJoinState === "submitting"
+                    ? "joining waitlist..."
+                    : waitlistJoinState === "success"
+                      ? "joined with this email"
+                      : "join waitlist with this email"}
+                </button>
+                {waitlistJoinState === "error" ? (
+                  <p className="mt-2 text-xs text-rose-300/90">
+                    couldn't join right now. try again in a moment.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
             <div className="mt-2">
               <Link
                 href="/beta/pending"
@@ -359,7 +413,7 @@ export function GenZLanding(props: GenZLandingProps) {
             spar
           </p>
           <p className="mt-3 text-sm" style={{ color: MUTED }}>
-            built for international students navigating a new world.
+            built for students navigating a new world.
           </p>
           <p className="mt-2 text-xs" style={{ color: MUTED }}>
             your conversations are encrypted and never shared.
