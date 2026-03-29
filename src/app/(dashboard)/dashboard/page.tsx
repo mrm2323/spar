@@ -13,10 +13,7 @@ import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import { startPracticeReplaySession, trackEvent } from "@/lib/analytics";
 import { UnderstandingMap } from "@/components/UnderstandingMap";
-import {
-  CONTEXT_SITUATION_PRESETS,
-  appendSituationPreset,
-} from "@/lib/context-presets";
+import { CONTEXT_SITUATION_PRESETS } from "@/lib/context-presets";
 
 interface PastSession {
   id: string;
@@ -89,6 +86,8 @@ function DashboardInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [contextText, setContextText] = useState("");
+  /** Chosen preset — sent as `situationPreset`; not injected as bracket text in the textarea. */
+  const [selectedSituation, setSelectedSituation] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showAllSessions, setShowAllSessions] = useState(false);
   const [sessions, setSessions] = useState<PastSession[]>([]);
@@ -303,6 +302,7 @@ function DashboardInner() {
     trackEvent("session_start_clicked", {
       source: "dashboard",
       has_context: Boolean(contextText.trim()),
+      has_situation_preset: Boolean(selectedSituation),
       attached_files_count: files.length,
     });
     try {
@@ -320,6 +320,7 @@ function DashboardInner() {
         body: JSON.stringify({
           context: merged || null,
           contextText: merged || undefined,
+          situationPreset: selectedSituation || undefined,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -360,6 +361,7 @@ function DashboardInner() {
           },
         })
       );
+      setSelectedSituation(null);
       router.push(`/session/${data.sessionId}`);
     } catch {
       trackEvent("session_start_failed", {
@@ -423,19 +425,36 @@ function DashboardInner() {
                   quick situation (optional)
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  {CONTEXT_SITUATION_PRESETS.map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() =>
-                        setContextText((t) => appendSituationPreset(t, preset))
-                      }
-                      className="rounded-full border border-cyan-500/25 bg-cyan-500/10 px-3 py-1.5 text-[11px] font-medium text-cyan-100/90 transition-colors hover:border-violet-400/35 hover:bg-violet-500/10"
-                    >
-                      {preset}
-                    </button>
-                  ))}
+                  {CONTEXT_SITUATION_PRESETS.map((preset) => {
+                    const on = selectedSituation === preset;
+                    return (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() =>
+                          setSelectedSituation((prev) =>
+                            prev === preset ? null : preset
+                          )
+                        }
+                        className={`rounded-full border px-3 py-1.5 text-[11px] font-medium transition-colors ${
+                          on
+                            ? "border-cyan-400/55 bg-cyan-500/20 text-cyan-50 ring-1 ring-cyan-400/35"
+                            : "border-cyan-500/25 bg-cyan-500/10 text-cyan-100/90 hover:border-violet-400/35 hover:bg-violet-500/10"
+                        }`}
+                      >
+                        {preset}
+                      </button>
+                    );
+                  })}
                 </div>
+                {selectedSituation ? (
+                  <p className="text-[11px] text-cyan-200/80">
+                    kabir will open expecting:{" "}
+                    <span className="font-medium text-cyan-100">{selectedSituation}</span>
+                    {" — "}
+                    tap again to clear
+                  </p>
+                ) : null}
                 <label htmlFor="kabir-context-paste" className="sr-only">
                   Context for Kabir
                 </label>
@@ -450,14 +469,19 @@ function DashboardInner() {
                 <p className="text-xs leading-relaxed text-slate-500">
                   Kabir will read this before your conversation starts.
                 </p>
-                {contextText.trim() || files.length > 0 ? (
+                {contextText.trim() || files.length > 0 || selectedSituation ? (
                   <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+                    {selectedSituation ? (
+                      <span className="block text-emerald-100/95">
+                        Focus: {selectedSituation}
+                      </span>
+                    ) : null}
                     Context ready for Kabir: {contextText.trim().length} typed chars and {files.length} file{files.length === 1 ? "" : "s"}.
-                    This context will be loaded before you start speaking.
+                    This loads before you start speaking.
                   </div>
                 ) : (
                   <div className="rounded-lg border border-slate-700/60 bg-slate-900/40 px-3 py-2 text-xs text-slate-400">
-                    Optional: add typed notes or files, then start session.
+                    Optional: pick a situation, add notes or files, then start.
                   </div>
                 )}
 

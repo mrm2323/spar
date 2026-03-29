@@ -1,6 +1,6 @@
 /**
- * Quick situations users can tag before a session. Appended as structured lines;
- * users can still type anything — this only helps Kabir tune faster.
+ * Quick situations for the dashboard. Selection is sent as `situationPreset` to
+ * `/api/session/start` (not injected into the textarea).
  */
 export const CONTEXT_SITUATION_PRESETS = [
   "Breakup",
@@ -17,15 +17,22 @@ export const CONTEXT_SITUATION_PRESETS = [
 
 export type ContextSituationPreset = (typeof CONTEXT_SITUATION_PRESETS)[number];
 
-const MARKER_PREFIX = "[situation:";
+/** Legacy bracket lines from older clients — extract label if present. */
+export function parseSituationMarker(text: string): string | null {
+  if (!text || typeof text !== "string") return null;
+  const m = text.match(/\[situation:\s*([^\]]+)]/i);
+  return m?.[1]?.trim() || null;
+}
 
-/** Append a preset line if not already present (case-sensitive on label). */
-export function appendSituationPreset(
-  current: string,
-  label: string
+/** First spoken line when user pre-selected a situation (passed separately, not in textarea). */
+export function buildSituationFirstMessage(
+  situationLabel: string,
+  firstName?: string | null
 ): string {
-  const line = `${MARKER_PREFIX} ${label.trim()}]`;
-  if (current.includes(line)) return current;
-  const base = current.trim();
-  return base ? `${base}\n\n${line}` : line;
+  const focus = situationLabel.trim();
+  const n = firstName?.trim();
+  if (n) {
+    return `Hey ${n} — it's Kabir. You wanted to work on your ${focus}. I'm already with you on that — don't recap the whole thing unless you need to. What's the first line or the part that feels stuck?`;
+  }
+  return `Hey — it's Kabir. You wanted to work on your ${focus}. I'm already with you on that. What's the first line or the part that feels stuck?`;
 }

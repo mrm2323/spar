@@ -2,6 +2,8 @@ export interface KabirSessionConfig {
   scenarioRaw?: string;
   /** Pasted email, JD, message, etc. — full text for a dedicated prompt section */
   contextText?: string;
+  /** User chose a dashboard preset (e.g. Elevator pitch) — Kabir must not ask "what's this about?" */
+  situationPreset?: string;
   channel: "phone" | "web";
   durationSeconds: number;
   userName?: string;
@@ -205,6 +207,17 @@ If it's a job description, you know what the role requires.
 Do NOT summarize the context back to them. Just use it. When they mention
 something related to this context, demonstrate that you already know by
 responding with specific details from what they shared.
+` : ""}
+${config.situationPreset ? `
+════════════════════════
+SESSION FOCUS — USER ALREADY PICKED THIS
+════════════════════════
+They chose this before the call: "${config.situationPreset}"
+
+Critical:
+- Do NOT open with "what conversation are we practicing," "what's on your mind today," or any generic discovery question — they already told you the type (it's in CONTEXT above too, often as a "Situation:" line).
+- Your first turn must show you were expecting them: name the focus in plain language (e.g. elevator pitch, roommate talk), warm and short.
+- Then ask ONE specific forward question for that situation (first line, who it's for, or what feels stuck) — not a repeat of "what is this about."
 ` : ""}
 ${config.scenarioRaw ? `They want to practice: ${config.scenarioRaw}` : ""}
 Channel: ${config.channel}.

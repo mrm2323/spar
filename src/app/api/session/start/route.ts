@@ -8,6 +8,10 @@ import {
 import { buildKabirPrompt } from "@/lib/kabir/system-prompt";
 import { getMemoryPreference } from "@/lib/memory/preferences";
 import {
+  buildSituationFirstMessage,
+  parseSituationMarker,
+} from "@/lib/context-presets";
+import {
   formatRemainingTime,
   getAllowedSessionSeconds,
   getUserSessionUsage,
@@ -28,6 +32,7 @@ export async function POST(req: Request) {
       resumeSessionId,
       mode,
       referenceSessionId,
+      situationPreset: situationPresetBody,
     } = body as {
       context?: string | null;
       /** Pasted email, JD, etc. — also stored in session row via merged `context` */
@@ -35,6 +40,8 @@ export async function POST(req: Request) {
       resumeSessionId?: string | null;
       mode?: "new" | "continue" | "restart";
       referenceSessionId?: string | null;
+      /** Dashboard chip: Elevator pitch, etc. — not shown as bracket text in UI */
+      situationPreset?: string | null;
     };
 
     const effectiveMode = mode || "new";
@@ -46,9 +53,26 @@ export async function POST(req: Request) {
       typeof contextText === "string" ? contextText.trim() : "";
     const legacyContext =
       typeof context === "string" ? context.trim() : "";
+    const situationPresetRaw =
+      typeof situationPresetBody === "string"
+        ? situationPresetBody.trim()
+        : "";
+
     /** Stored on session row; prefer explicit contextText (paste + files from client), else legacy `context`. */
     let effectiveContext: string | null =
       pastedBlock || legacyContext || null;
+    if (situationPresetRaw) {
+      const line = `Situation: ${situationPresetRaw}`;
+      effectiveContext = effectiveContext
+        ? `${line}\n\n${effectiveContext}`
+        : line;
+    }
+
+    const situationLabel =
+      situationPresetRaw ||
+      parseSituationMarker(pastedBlock) ||
+      parseSituationMarker(legacyContext) ||
+      null;
 
     const supabase = createSupabaseAdmin();
 
@@ -128,8 +152,12 @@ export async function POST(req: Request) {
     }
 
     const systemPrompt = buildKabirPrompt({
-      scenarioRaw: pastedBlock ? undefined : effectiveContext || undefined,
-      contextText: pastedBlock || undefined,
+      scenarioRaw: undefined,
+      contextText: effectiveContext || undefined,
+      situationPreset:
+        situationLabel && !effectiveResumeSessionId && effectiveMode !== "restart"
+          ? situationLabel
+          : undefined,
       channel: "web",
       durationSeconds: allowedSessionSeconds,
       userName: userFirstName,
@@ -167,6 +195,8 @@ export async function POST(req: Request) {
         : "Hey. Let's run this from the top. Give me your opening line when you're ready.";
     } else if (effectiveResumeSessionId) {
       firstMessage = defaultResumeFirstMessage(name);
+    } else if (situationLabel) {
+      firstMessage = buildSituationFirstMessage(situationLabel, name);
     } else if (hasHistory) {
       firstMessage = name
         ? `Hey ${name} — it's Kabir. I'm with you. What's the conversation today?`
