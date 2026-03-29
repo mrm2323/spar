@@ -79,10 +79,19 @@ export function GenZLanding(props: GenZLandingProps) {
         >
           spar
         </Link>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
+          {!isSignedIn ? (
+            <Link
+              href="#waitlist"
+              className="rounded-full border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-white/5 sm:px-4"
+              style={{ borderColor: `${ACCENT2}99`, color: ACCENT2 }}
+            >
+              join waitlist
+            </Link>
+          ) : null}
           <Link
             href={tryHref}
-            className="rounded-full border px-4 py-1.5 text-xs font-medium transition-colors hover:bg-white/5"
+            className="rounded-full border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-white/5 sm:px-4"
             style={{ borderColor: `${ACCENT}99`, color: ACCENT }}
           >
             try kabir
@@ -163,6 +172,32 @@ export function GenZLanding(props: GenZLandingProps) {
           </div>
         </div>
       </section>
+
+      {/* Waitlist — logged out (high on page + #waitlist for header link) */}
+      {!isSignedIn ? (
+        <section
+          id="waitlist"
+          className="scroll-mt-24 border-b border-white/[0.06] pb-16 pt-2"
+          style={{ backgroundColor: BG }}
+        >
+          <div className="mx-auto max-w-md px-5 sm:px-8">
+            <p className="text-center text-xs font-medium uppercase tracking-[0.14em]" style={{ color: MUTED }}>
+              want early access
+            </p>
+            <EarlyAccessForm compact hideLabel />
+            <p className="mt-4 text-center text-xs" style={{ color: MUTED }}>
+              already approved{" "}
+              <Link
+                href="/sign-in"
+                className="underline decoration-white/20 underline-offset-2"
+                style={{ color: ACCENT }}
+              >
+                get started
+              </Link>
+            </p>
+          </div>
+        </section>
+      ) : null}
 
       {/* SECTION 2 — MOMENT */}
       <section style={{ backgroundColor: BG_SECTION }} className="py-20 sm:py-24">
@@ -306,22 +341,6 @@ export function GenZLanding(props: GenZLandingProps) {
           </Link>
         </div>
       </section>
-
-      {/* Waitlist — logged out */}
-      {!isSignedIn ? (
-        <section className="mx-auto max-w-md px-5 pb-12 sm:px-8">
-          <p className="mb-4 text-center text-xs" style={{ color: MUTED }}>
-            want early access
-          </p>
-          <EarlyAccessForm />
-          <p className="mt-4 text-center text-xs" style={{ color: MUTED }}>
-            already approved{" "}
-            <Link href="/sign-in" className="underline decoration-white/20 underline-offset-2" style={{ color: ACCENT }}>
-              get started
-            </Link>
-          </p>
-        </section>
-      ) : null}
 
       {/* SECTION 6 — FOOTER */}
       <footer className="border-t border-white/[0.06] px-5 py-12 sm:px-8">

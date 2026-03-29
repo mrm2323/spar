@@ -2,7 +2,17 @@
 
 import { useState } from "react";
 
-export function EarlyAccessForm() {
+type EarlyAccessFormProps = {
+  /** Tighter top margin when the section heading sits directly above (e.g. landing hero). */
+  compact?: boolean;
+  /** Hide the built-in "Beta access" line when the parent already has a section title. */
+  hideLabel?: boolean;
+};
+
+export function EarlyAccessForm({
+  compact = false,
+  hideLabel = false,
+}: EarlyAccessFormProps) {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<
     "idle" | "submitting" | "success" | "error"
@@ -34,10 +44,12 @@ export function EarlyAccessForm() {
   }
 
   return (
-    <div className="mt-10 w-full max-w-lg">
-      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500">
-        Beta access
-      </p>
+    <div className={`${compact ? "mt-3" : "mt-10"} w-full max-w-lg`}>
+      {!hideLabel ? (
+        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-slate-500">
+          Beta access
+        </p>
+      ) : null}
       <form
         onSubmit={onSubmit}
         className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-stretch"
