@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Paperclip, Loader2, Check, Star, Send, MessageSquareText } from "lucide-react";
 import Vapi from "@vapi-ai/web";
@@ -32,6 +32,49 @@ type ContextSummary = {
 const SILENCE_NUDGE_1_SECONDS = 10;
 const SILENCE_NUDGE_2_SECONDS = 20;
 const SILENCE_AUTO_END_SECONDS = 30;
+
+const LOCAL_MIC_ACTIVITY_THRESHOLD = 0.035;
+
+function isUserTranscriptRole(role: string): boolean {
+  const r = role.toLowerCase();
+  return (
+    r.includes("user") ||
+    r.includes("customer") ||
+    r.includes("caller") ||
+    r.includes("client") ||
+    r.includes("human") ||
+    r === "participant" ||
+    r === "member"
+  );
+}
+
+function extractSideChannelUserText(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const o = payload as Record<string, unknown>;
+  const tryText = (x: unknown) =>
+    typeof x === "string" && x.trim() ? x.trim() : null;
+  const t = typeof o.type === "string" ? o.type.toLowerCase() : "";
+  if (t.includes("transcript") || t === "conversation-update") {
+    const role = typeof o.role === "string" ? o.role : "";
+    if (isUserTranscriptRole(role)) {
+      return (
+        tryText(o.transcript) ||
+        tryText(o.text) ||
+        tryText(o.content) ||
+        tryText(o.message)
+      );
+    }
+  }
+  const transcript = o.transcript;
+  if (typeof transcript === "object" && transcript !== null) {
+    const tr = transcript as Record<string, unknown>;
+    const role = typeof tr.role === "string" ? tr.role : "";
+    if (isUserTranscriptRole(role)) {
+      return tryText(tr.text) || tryText(tr.content) || tryText(tr.transcript);
+    }
+  }
+  return null;
+}
 
 function hasNegatedEndIntent(text: string): boolean {
   return /\b(don['’]?t|do not|not now|keep going|continue)\b.*\b(end|stop|hang\s*up|finish)\b/i.test(
@@ -105,7 +148,10 @@ export default function SessionPage() {
   const [contextSummary, setContextSummary] = useState<ContextSummary | null>(null);
   const [silenceBanner, setSilenceBanner] = useState<string | null>(null);
   const replayStartSentRef = useRef(false);
-  const lastUserActivityRef = useRef(Date.now());
+  /** Last time we heard the user (transcript, mic, typed, file, composer). */
+  const lastUserSoundRef = useRef(Date.now());
+  /** Last time assistant audio went quiet (speech-end); silence counts from max(user, assistant). */
+  const lastAssistantQuietRef = useRef(Date.now());
   /** 0 = no nudge yet, 1 = first nudge sent, 2 = second nudge sent, 3 = ended */
   const silenceStageRef = useRef(0);
   const autoEndedForSilenceRef = useRef(false);
@@ -113,6 +159,9 @@ export default function SessionPage() {
   const endSessionRef = useRef<
     ((reason?: "manual" | "silence_auto" | "user_voice_request") => Promise<void>) | null
   >(null);
+  /** Live row id for in-place updates of streaming Vapi `transcript` partials. */
+  const assistantVoiceStreamIdRef = useRef<string | null>(null);
+  const userVoiceStreamIdRef = useRef<string | null>(null);
 
   const appendLiveMessage = useCallback((message: Omit<LiveMessage, "id">) => {
     setLiveMessages((prev) => [
@@ -124,8 +173,55 @@ export default function SessionPage() {
     ]);
   }, []);
 
-  const markUserActivity = useCallback(() => {
-    lastUserActivityRef.current = Date.now();
+  /**
+   * Vapi sends many `transcript` events with transcriptType partial then final.
+   * Update one bubble per role until final; avoids duplicate "KabirIf…" lines.
+   */
+  const upsertVoiceTranscriptLine = useCallback(
+    (role: "assistant" | "user", content: string, isFinal: boolean) => {
+      const trimmed = content.trim();
+      if (!trimmed) return;
+
+      const streamRef =
+        role === "assistant" ? assistantVoiceStreamIdRef : userVoiceStreamIdRef;
+
+      setLiveMessages((prev) => {
+        const sid = streamRef.current;
+        if (sid) {
+          const idx = prev.findIndex((m) => m.id === sid);
+          if (idx !== -1) {
+            const next = [...prev];
+            next[idx] = { ...next[idx], content: trimmed };
+            if (isFinal) streamRef.current = null;
+            return next;
+          }
+          streamRef.current = null;
+        }
+
+        const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        if (!isFinal) streamRef.current = id;
+        const capped = prev.length >= 40 ? prev.slice(-39) : prev;
+        return [...capped, { id, role, source: "voice", content: trimmed }];
+      });
+    },
+    []
+  );
+
+  const registerAssistantQuiet = useCallback(() => {
+    lastAssistantQuietRef.current = Date.now();
+  }, []);
+
+  const registerUserSound = useCallback(() => {
+    lastUserSoundRef.current = Date.now();
+    silenceStageRef.current = 0;
+    autoEndedForSilenceRef.current = false;
+    setSilenceBanner(null);
+  }, []);
+
+  const initSilenceClock = useCallback(() => {
+    const t = Date.now();
+    lastUserSoundRef.current = t;
+    lastAssistantQuietRef.current = t;
     silenceStageRef.current = 0;
     autoEndedForSilenceRef.current = false;
     setSilenceBanner(null);
@@ -190,13 +286,32 @@ export default function SessionPage() {
     vapiRef.current = vapi;
 
     vapi.on("call-start", async () => {
+      assistantVoiceStreamIdRef.current = null;
+      userVoiceStreamIdRef.current = null;
       setStatus("active");
-      markUserActivity();
+      initSilenceClock();
       try {
         await vapi.increaseMicLevel(1.15);
       } catch {
         /* noop */
       }
+      const daily = (
+        vapi as unknown as {
+          call?: { on?: (ev: string, fn: (e: unknown) => void) => void };
+        }
+      ).call;
+      daily?.on?.("local-audio-level", (ev: unknown) => {
+        const level =
+          ev && typeof ev === "object" && "audioLevel" in ev
+            ? Number((ev as { audioLevel: number }).audioLevel)
+            : 0;
+        if (level > LOCAL_MIC_ACTIVITY_THRESHOLD) {
+          lastUserSoundRef.current = Date.now();
+          silenceStageRef.current = 0;
+          autoEndedForSilenceRef.current = false;
+          setSilenceBanner(null);
+        }
+      });
     });
     vapi.on("call-end", () => {
       setStatus("ended");
@@ -208,25 +323,116 @@ export default function SessionPage() {
     });
     vapi.on("speech-end", () => {
       setSpeaking("listening");
-      // Silence timing is based on real user activity, not assistant speech.
+      registerAssistantQuiet();
     });
 
     vapi.on("message", (payload: unknown) => {
       const top = (payload || {}) as Record<string, unknown>;
       const body = (top.message || undefined) as Record<string, unknown> | undefined;
+      const merged = { ...top, ...(body || {}) } as Record<string, unknown>;
+
+      const msgType = typeof merged.type === "string" ? merged.type : "";
+      if (msgType === "transcript" || msgType.startsWith("transcript[")) {
+        const tr =
+          typeof merged.transcript === "string" ? merged.transcript.trim() : "";
+        if (!tr) return;
+
+        const tType =
+          merged.transcriptType === "partial" || merged.transcriptType === "final"
+            ? merged.transcriptType
+            : "final";
+        const isFinal = tType === "final";
+
+        const roleRawTr =
+          typeof merged.role === "string" ? merged.role.toLowerCase() : "";
+
+        if (
+          roleRawTr === "assistant" ||
+          roleRawTr === "bot" ||
+          roleRawTr === "agent"
+        ) {
+          upsertVoiceTranscriptLine("assistant", tr, isFinal);
+          return;
+        }
+
+        if (isUserTranscriptRole(roleRawTr)) {
+          registerUserSound();
+          upsertVoiceTranscriptLine("user", tr, isFinal);
+
+          if (isFinal) {
+            const now = Date.now();
+            const pendingUntil = pendingEndConfirmUntilRef.current;
+            const withinConfirmWindow = Boolean(pendingUntil && now < pendingUntil);
+
+            if (withinConfirmWindow && hasEndConfirmation(tr) && !endingRef.current) {
+              pendingEndConfirmUntilRef.current = null;
+              setSilenceBanner("Confirmed. Ending this session now.");
+              void endSessionRef.current?.("user_voice_request");
+              return;
+            }
+
+            if (hasNegatedEndIntent(tr)) {
+              pendingEndConfirmUntilRef.current = null;
+              setSilenceBanner("Okay, I will not end right now.");
+              return;
+            }
+
+            if (hasEndIntent(tr) && !endingRef.current) {
+              if (
+                hasImmediateEndIntent(tr) ||
+                (withinConfirmWindow && hasEndConfirmation(tr))
+              ) {
+                pendingEndConfirmUntilRef.current = null;
+                setSilenceBanner("Heard you. Ending this session now.");
+                void endSessionRef.current?.("user_voice_request");
+                return;
+              }
+
+              if (hasSpecificSessionEndIntent(tr)) {
+                pendingEndConfirmUntilRef.current = null;
+                setSilenceBanner("Heard you. Ending this session now.");
+                void endSessionRef.current?.("user_voice_request");
+                return;
+              }
+
+              pendingEndConfirmUntilRef.current = now + 12000;
+              setSilenceBanner(
+                "Say 'end session now' to confirm, or keep talking to continue."
+              );
+              const vapiLocal = vapiRef.current;
+              if (vapiLocal) {
+                vapiLocal.send({
+                  type: "add-message",
+                  triggerResponseEnabled: true,
+                  message: {
+                    role: "system",
+                    content:
+                      "User might want to end the call. Ask once for explicit confirmation. If they do not confirm, continue coaching.",
+                  },
+                });
+              }
+            }
+          }
+        }
+        return;
+      }
 
       const roleRaw =
         readStringField(body, ["role", "speaker", "from"]) ||
         readStringField(top, ["role", "speaker", "from"]);
       const role = roleRaw.toLowerCase();
 
-      const text =
+      const textFromRow =
         readStringField(body, ["content", "message", "text", "transcript"]) ||
         readStringField(top, ["content", "message", "text", "transcript"]);
-
+      const sideFallback = textFromRow ? null : extractSideChannelUserText(payload);
+      const text = (textFromRow || sideFallback || "").trim();
       if (!text) return;
 
-      if (role.includes("assistant") || role.includes("bot") || role.includes("agent")) {
+      if (
+        textFromRow &&
+        (role.includes("assistant") || role.includes("bot") || role.includes("agent"))
+      ) {
         appendLiveMessage({ role: "assistant", source: "voice", content: text });
         return;
       }
@@ -236,8 +442,15 @@ export default function SessionPage() {
         (String(top.type || "").toLowerCase().includes("transcript") ||
           String(body?.type || "").toLowerCase().includes("transcript"));
 
-      if (role.includes("user") || role.includes("customer") || likelyUserTranscript) {
-        markUserActivity();
+      const isUserLine =
+        Boolean(sideFallback) ||
+        (Boolean(textFromRow) && isUserTranscriptRole(role)) ||
+        role.includes("user") ||
+        role.includes("customer") ||
+        likelyUserTranscript;
+
+      if (isUserLine) {
+        registerUserSound();
         appendLiveMessage({ role: "user", source: "voice", content: text });
         const now = Date.now();
         const pendingUntil = pendingEndConfirmUntilRef.current;
@@ -273,9 +486,9 @@ export default function SessionPage() {
 
           pendingEndConfirmUntilRef.current = now + 12000;
           setSilenceBanner("Say 'end session now' to confirm, or keep talking to continue.");
-          const vapi = vapiRef.current;
-          if (vapi) {
-            vapi.send({
+          const vapiLocal = vapiRef.current;
+          if (vapiLocal) {
+            vapiLocal.send({
               type: "add-message",
               triggerResponseEnabled: true,
               message: {
@@ -320,13 +533,15 @@ export default function SessionPage() {
           "Hey. It's Kabir. What conversation are you looking forward to?",
         maxDurationSeconds: sessionMaxDuration,
         startSpeakingPlan: {
-          waitSeconds: 0.85,
-          smartEndpointingEnabled: true,
+          // Slightly longer pause so Kabir doesn't jump in while you're mid-thought.
+          waitSeconds: 1.15,
+          smartEndpointingPlan: { provider: "livekit" },
         },
         stopSpeakingPlan: {
-          numWords: 2,
-          voiceSeconds: 0.22,
-          backoffSeconds: 0.95,
+          // numWords: 0 → use VAD (voiceSeconds) so he stops as soon as you talk, not after 2 words.
+          numWords: 0,
+          voiceSeconds: 0.14,
+          backoffSeconds: 0.45,
         },
       })
       .then(async (call) => {
@@ -354,7 +569,10 @@ export default function SessionPage() {
     router,
     trustAcknowledged,
     appendLiveMessage,
-    markUserActivity,
+    upsertVoiceTranscriptLine,
+    initSilenceClock,
+    registerUserSound,
+    registerAssistantQuiet,
   ]);
 
   useEffect(() => {
@@ -371,10 +589,14 @@ export default function SessionPage() {
     const interval = window.setInterval(() => {
       if (endingRef.current || speaking === "kabir") return;
       if (composerFocused || midContextDraft.trim().length > 0 || midContextSaving) {
-        markUserActivity();
+        registerUserSound();
         return;
       }
-      const idleSeconds = (Date.now() - lastUserActivityRef.current) / 1000;
+      const idleStart = Math.max(
+        lastUserSoundRef.current,
+        lastAssistantQuietRef.current
+      );
+      const idleSeconds = (Date.now() - idleStart) / 1000;
       const vapi = vapiRef.current;
 
       if (
@@ -385,12 +607,6 @@ export default function SessionPage() {
         setSilenceBanner(
           "Still there? Another 20 seconds of silence and we’ll wrap."
         );
-        appendLiveMessage({
-          role: "system",
-          source: "status",
-          content:
-            "Silence: first nudge — session ends after 30 seconds total silence unless they speak.",
-        });
         if (vapi) {
           vapi.send({
             type: "add-message",
@@ -410,11 +626,6 @@ export default function SessionPage() {
       ) {
         silenceStageRef.current = 2;
         setSilenceBanner("Last check — wrapping in ~10 seconds if it stays quiet.");
-        appendLiveMessage({
-          role: "system",
-          source: "status",
-          content: "Silence: second nudge — auto-end in ~10s if still quiet.",
-        });
         if (vapi) {
           vapi.send({
             type: "add-message",
@@ -447,7 +658,7 @@ export default function SessionPage() {
     composerFocused,
     midContextDraft,
     midContextSaving,
-    markUserActivity,
+    registerUserSound,
   ]);
 
   const handleFileUpload = useCallback(
@@ -499,7 +710,7 @@ export default function SessionPage() {
             data.text.length > 14_000
               ? `${data.text.slice(0, 14_000)}\n\n[Truncated — file was long]`
               : data.text;
-          markUserActivity();
+          registerUserSound();
           // User-role + triggerResponse so the assistant actually speaks; system-only
           // injections often never get a spoken reply in live calls.
           vapi.send({
@@ -552,7 +763,7 @@ export default function SessionPage() {
 
       if (fileInputRef.current) fileInputRef.current.value = "";
     },
-    [id, appendLiveMessage, markUserActivity]
+    [id, appendLiveMessage, registerUserSound]
   );
 
   const endSession = useCallback(async (reason: "manual" | "silence_auto" | "user_voice_request" = "manual") => {
@@ -685,6 +896,20 @@ export default function SessionPage() {
     }
   }, [id, callRating, recommendScore, callFeedback, elapsed, continueToNotes]);
 
+  /** Hide internal silence-control lines from the live transcript. */
+  const transcriptForDisplay = useMemo(
+    () =>
+      liveMessages.filter(
+        (m) =>
+          !(
+            m.role === "system" &&
+            m.source === "status" &&
+            /silence/i.test(m.content)
+          )
+      ),
+    [liveMessages]
+  );
+
   const formatTime = (s: number) => {
     const m = Math.floor(s / 60);
     const sec = s % 60;
@@ -698,7 +923,7 @@ export default function SessionPage() {
     try {
       const draft = midContextDraft.trim();
       setMidContextDraft("");
-      markUserActivity();
+      registerUserSound();
       const vapi = vapiRef.current;
       if (vapi) {
         vapi.send({
@@ -734,7 +959,7 @@ export default function SessionPage() {
     } finally {
       setMidContextSaving(false);
     }
-  }, [id, midContextDraft, appendLiveMessage, markUserActivity]);
+  }, [id, midContextDraft, appendLiveMessage, registerUserSound]);
 
   if (status === "error") {
     return (
@@ -857,9 +1082,13 @@ export default function SessionPage() {
               type="button"
               onClick={() => void submitFeedback()}
               disabled={feedbackSaving}
-              className="rounded-md border border-emerald-500/60 bg-emerald-600/20 px-4 py-2 text-sm font-medium text-emerald-100 hover:bg-emerald-600/30 disabled:opacity-50"
+              aria-busy={feedbackSaving}
+              className="inline-flex items-center gap-2 rounded-md border border-emerald-500/60 bg-emerald-600/20 px-4 py-2 text-sm font-medium text-emerald-100 hover:bg-emerald-600/30 disabled:opacity-50"
             >
-              {feedbackSaving ? "Saving..." : "Submit & continue"}
+              {feedbackSaving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : null}
+              {feedbackSaving ? "Saving…" : "Submit & continue"}
             </button>
           </div>
         </div>
@@ -945,41 +1174,51 @@ export default function SessionPage() {
             <p className="mt-2 text-xs text-cyan-300/90">{silenceBanner}</p>
           ) : null}
 
-          {liveMessages.length > 0 ? (
-            <div className="mt-5 w-[min(100vw-1.25rem,46rem)] rounded-xl border border-slate-700/60 bg-slate-950/55 px-3 py-3 backdrop-blur">
-              <div className="mb-2 flex items-center gap-2 text-xs text-slate-400">
-                <MessageSquareText className="h-3.5 w-3.5" />
-                Conversation log
-              </div>
-              <div className="max-h-36 space-y-2 overflow-y-auto pr-1">
-                {liveMessages.slice(-8).map((m) => (
+          <div className="mt-5 w-[min(100vw-1.25rem,46rem)] rounded-xl border border-slate-700/60 bg-slate-950/55 px-3 py-3 backdrop-blur">
+            <div className="mb-2 flex items-center gap-2 text-xs text-slate-400">
+              <MessageSquareText className="h-3.5 w-3.5" />
+              Live transcript
+            </div>
+            <div className="max-h-[min(50vh,22rem)] min-h-[7.5rem] space-y-2 overflow-y-auto pr-1">
+              {transcriptForDisplay.length === 0 ? (
+                <p className="px-1 py-4 text-center text-xs leading-relaxed text-slate-500">
+                  Your lines appear here as they are transcribed. Type below anytime — Kabir gets it as chat and can reply out loud.
+                </p>
+              ) : (
+                transcriptForDisplay.slice(-40).map((m) => (
                   <div
                     key={m.id}
-                    className={`rounded-lg border px-2.5 py-2 text-xs leading-relaxed ${
+                    className={`rounded-lg border px-2.5 py-2 text-sm leading-relaxed ${
                       m.role === "assistant"
                         ? "border-cyan-700/50 bg-cyan-950/20 text-slate-100"
                         : m.role === "user"
                           ? "border-emerald-700/50 bg-emerald-950/20 text-slate-100"
-                          : "border-cyan-700/50 bg-cyan-950/20 text-slate-100"
+                          : "border-slate-600/50 bg-slate-900/40 text-slate-200"
                     }`}
                   >
                     <span
-                      className={`mr-2 uppercase tracking-wider ${
+                      className={`mb-1 block text-[10px] uppercase tracking-wider ${
                         m.role === "assistant"
                           ? "text-cyan-300"
                           : m.role === "user"
                             ? "text-emerald-300"
-                            : "text-cyan-300"
+                            : "text-slate-400"
                       }`}
                     >
-                      {m.role === "assistant" ? "Kabir" : m.role === "user" ? "You" : "System"}
+                      {m.role === "assistant"
+                        ? "Kabir"
+                        : m.role === "user"
+                          ? m.source === "typed"
+                            ? "You (typed)"
+                            : "You"
+                          : "Note"}
                     </span>
-                    <span className="whitespace-pre-wrap">{m.content}</span>
+                    <span className="block whitespace-pre-wrap">{m.content}</span>
                   </div>
-                ))}
-              </div>
+                ))
+              )}
             </div>
-          ) : null}
+          </div>
 
           <input
             ref={fileInputRef}
@@ -996,15 +1235,14 @@ export default function SessionPage() {
                   value={midContextDraft}
                   onFocus={() => {
                     setComposerFocused(true);
-                    markUserActivity();
+                    registerUserSound();
                   }}
                   onBlur={() => setComposerFocused(false)}
                   onChange={(e) => {
                     setMidContextDraft(e.target.value);
-                    markUserActivity();
+                    registerUserSound();
                   }}
                   onKeyDown={(e) => {
-                    markUserActivity();
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
                       void saveMidSessionContext();
@@ -1018,14 +1256,20 @@ export default function SessionPage() {
                   type="button"
                   disabled={midContextSaving || !midContextDraft.trim()}
                   onClick={() => void saveMidSessionContext()}
-                  className="inline-flex h-11 w-full shrink-0 items-center justify-center gap-1 rounded-lg bg-cyan-600 px-3 text-sm font-medium text-white transition-colors hover:bg-cyan-500 disabled:opacity-40 sm:w-auto"
+                  aria-busy={midContextSaving}
+                  className="inline-flex h-11 min-w-[6.5rem] shrink-0 items-center justify-center gap-2 rounded-lg bg-cyan-600 px-4 text-sm font-medium text-white transition-colors hover:bg-cyan-500 disabled:opacity-40 sm:w-auto"
                 >
                   {midContextSaving ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Sending…
+                    </>
                   ) : (
-                    <Send className="h-4 w-4" />
+                    <>
+                      <Send className="h-4 w-4" />
+                      Send
+                    </>
                   )}
-                  Send
                 </button>
               </div>
               <div className="mt-3 flex flex-col items-stretch justify-center gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">

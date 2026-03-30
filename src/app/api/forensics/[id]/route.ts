@@ -31,7 +31,7 @@ export async function GET(
 }
 
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: sessionId } = await params;
@@ -40,9 +40,23 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  console.log("[FORENSICS API] POST — generating notes for session:", sessionId);
+  let forceRegenerate = false;
+  try {
+    const body = (await req.json()) as { regenerate?: boolean };
+    forceRegenerate = Boolean(body?.regenerate);
+  } catch {
+    /* no JSON body — first-time generate */
+  }
 
-  const result = await generateKabirNotes(sessionId, userId);
+  console.log(
+    "[FORENSICS API] POST — session:",
+    sessionId,
+    forceRegenerate ? "(regenerate)" : "(generate if missing)"
+  );
+
+  const result = await generateKabirNotes(sessionId, userId, {
+    forceRegenerate,
+  });
 
   if (!result) {
     console.log("[FORENSICS API] No result (likely no transcript yet)");
@@ -60,5 +74,7 @@ export async function POST(
   return NextResponse.json({
     status: "ready",
     notes: result.notes,
+    fromCache: result.fromCache,
+    regenerated: forceRegenerate && !result.fromCache,
   });
 }

@@ -19,6 +19,7 @@ export type TranscriptMessage = {
   role?: string;
   speaker?: string;
   content?: string;
+  transcript?: string;
   message?: string;
   text?: string;
 };
@@ -99,7 +100,9 @@ export function computeTranscriptStats(transcript: unknown): {
   }
 
   for (const m of messages) {
-    const text = String(m.content || m.message || m.text || "").trim();
+    const text = String(
+      m.content || m.transcript || m.message || m.text || ""
+    ).trim();
     if (!text || isPromptArtifact(text)) continue;
     const role = m.role || m.speaker;
     const words = text.toLowerCase().split(/\s+/).filter(Boolean);

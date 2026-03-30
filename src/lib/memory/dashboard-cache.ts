@@ -389,11 +389,16 @@ export async function clearPatternRecognition(
   userId: string
 ): Promise<{ ok: boolean }> {
   const supabase = createSupabaseAdmin();
+  const now = new Date().toISOString();
 
-  const { error: cacheErr } = await supabase
-    .from("user_memory_cache")
-    .update({ patterns_json: [] })
-    .eq("user_id", userId);
+  const { error: cacheErr } = await supabase.from("user_memory_cache").upsert(
+    {
+      user_id: userId,
+      patterns_json: [],
+      generated_at: now,
+    },
+    { onConflict: "user_id" }
+  );
 
   if (cacheErr && !isMissingUserMemoryCacheTableError(cacheErr)) {
     console.error("[dashboard-cache] clear patterns_json", cacheErr);

@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { createSupabaseAdmin } from "@/lib/supabase/server";
+import { sessionBelongsToUser } from "@/lib/session-access";
 import {
   formatKabirNotesForMemory,
   hasSupermemory,
@@ -85,6 +86,7 @@ async function fetchTranscriptFromVapi(
     const transcript =
       data.artifact?.messages ||
       data.artifact?.transcript ||
+      data.messages ||
       data.transcript ||
       null;
 
@@ -106,6 +108,42 @@ async function fetchTranscriptFromVapi(
   }
 }
 
+export type SessionTranscriptRow = {
+  id: string;
+  transcript: unknown;
+  vapi_call_id: string | null;
+};
+
+/** True when there is nothing useful to show or send to the model. */
+function transcriptLooksEmpty(transcript: unknown): boolean {
+  if (transcript == null) return true;
+  if (Array.isArray(transcript)) return transcript.length === 0;
+  if (typeof transcript === "string") return !transcript.trim();
+  if (typeof transcript === "object") return false;
+  return true;
+}
+
+/**
+ * If the session row has no transcript but we have a Vapi call id, pull from Vapi and persist.
+ * Used by notes generation and the notes page so "Full conversation" is not empty when the webhook was late or missed.
+ */
+export async function hydrateTranscriptIfMissing(
+  row: SessionTranscriptRow
+): Promise<unknown> {
+  if (!transcriptLooksEmpty(row.transcript)) return row.transcript;
+  const callId =
+    typeof row.vapi_call_id === "string" ? row.vapi_call_id.trim() : "";
+  if (!callId) return row.transcript;
+
+  const t = await fetchTranscriptFromVapi(callId);
+  if (!t || transcriptLooksEmpty(t)) return row.transcript;
+
+  const supabase = createSupabaseAdmin();
+  await supabase.from("sessions").update({ transcript: t }).eq("id", row.id);
+  console.log("[NOTES] Hydrated transcript from Vapi for session:", row.id);
+  return t;
+}
+
 const NOTES_PROMPT = `You are Kabir writing notes to someone you just practiced a conversation with. You have their transcript below and may have CONTEXT they shared before the call (email, JD, message). Your notes must feel like a personal briefing from someone who READ everything, LISTENED, and is telling them exactly what to do next — not a report card.
 
 ABSOLUTE RULES:
@@ -123,22 +161,39 @@ Every note should demonstrate that you understood the FULL picture, not just the
 BAD: 'You were vague when describing the problem.'
 GOOD: 'You told me Sarah gets quiet when she is upset. But your opening line — telling her everything that is wrong — is going to trigger exactly that. She will shut down before you get to what you actually want. Start with what you want for the relationship, not what is broken.'
 
-2c. Action items must reference specific details.
-BAD: 'Prepare what you want to say.'
-GOOD: 'Text Sarah today and say you want to talk this weekend. Don't ambush her after work. She needs time to not feel cornered.'
-
 2d. If the conversation was too short to gather meaningful context, say that honestly in readiness, e.g.:
 'I did not get to ask you enough about the situation. Next time give me 5 minutes before we start practicing. The more I know about who you are talking to and what is really going on, the better I can help.'
 
-3. keyHighlights — Up to 5 strings. Each ONE sentence. Specific facts or insights they might miss — names, dates, products, agendas. BAD: "The CEO wants to meet." GOOD: "Brendan mentioned a product launching in April and said you could get immediately involved — that is the real agenda, not the class visit."
+3. anticipatedQuestions — EXACTLY 2 to 3 objects.
 
-4. actionItems — Up to 5 strings. SPECIFIC actions before their real conversation. Start each with a verb. Include names, dates, topics from the conversation or shared context. BAD: "Research the company." GOOD: "Read the pitch deck he attached. Find one thing in the investor Q&A you can ask about Tuesday."
+Before you write them: pull 3 CONCRETE anchors from the transcript (names, class or event title, format of the session, example topic they chose, audience, fear they said out loud, phrase Kabir used). You will prove you used the transcript.
 
-5. If the user discussed a specific person, include "aboutThem" with what Kabir inferred about the other person's likely perspective, possible motivations, and how they might receive the conversation. This helps the user walk in with empathy, not just strategy.
+REQUIRED FRAMING (follow exactly):
+"Based on the conversation, predict 2-3 specific questions the other person will likely ask in the real conversation. For each, write the exact words the user should say in response. Not advice about what to say. The literal sentence they should speak. Be specific to this situation."
+
+For EACH object:
+- "question": Must sound like something THIS evaluator / counterpart would ask given what was practiced — include at least one anchor (the class, the rubric, the scenario, or a detail they said). Banned: generic interview filler that could apply to any job ("tell me about yourself" unless the transcript was literally about that).
+- "answer": The EXACT WORDS out of their mouth — one or two short sentences max. MUST reuse specific language from the transcript (the topic they nailed, the structure of the class, the story they told). 
+BAD answer (too generic): "I'm aiming to showcase both clarity and confidence in my communication." / "I'll focus on articulating my thoughts clearly regardless of the topic."
+GOOD answer (grounded): "For my five-minute piece I'm using the story about the ER waiting room — it hits the 'stakes + resolution' rubric we talked about." (uses their example + rubric from session)
+BAD question: "What specific skills are you hoping to demonstrate?"
+GOOD question: "Why did you pick that example for the impromptu round instead of something from work?" (only if the transcript was about choosing an example)
+
+If the transcript is rich and you still output generic Q&A, you failed the task. Rewrite until each line could only apply to THIS session.
+Other rules: NOT "you could try...", NOT "Say:", NOT meta-instructions — only spoken words.
+If the scenario is too thin to predict, still give 2 best-effort scenario-specific questions; do not use filler like "How are you?"
+
+4. actionItems — Up to 5 strings. Each must cite something CONCRETE from the transcript or shared context (a name, a number, a topic, a document, a fear they named). Generic coaching is forbidden.
+BAD: "Clarify the main problem."
+GOOD: "Write one sentence that explains what happens when international students freeze in interviews. Practice saying it out loud in under 10 seconds."
+
+5. aboutThem — Only if the user gave enough specific detail about the other person (role, relationship, behavior, stakes) to infer something grounded. Write empathy + how they might receive the conversation using THOSE details.
+If they did NOT give enough detail, set aboutThem to EXACTLY: "I don't know enough about who you're meeting. Before your next session, tell me about them and I'll help you read the room."
+Do not invent a generic personality sketch when facts are missing.
 
 6. whatWorked — { "quote": "exact strong user words", "why": "one sentence" }. whatToRethink — same shape for words that need work.
 
-7. beforeYouWalkIn — One specific opening line or approach for the real conversation from actual details they shared. Never generic. Never placeholders.
+7. beforeYouWalkIn — Must be a COMPLETE sentence or two the user can literally say out loud. NEVER end with ellipsis, "...", trailing "by...", or template junk like "dive into the unique solution." Give actual words. If you lack specifics, give a tight STRUCTURE they can follow in complete sentences, e.g. "Open with the problem in one sentence. State the number that proves it. Then stop and let them respond." That is better than a half-finished template.
 
 8. readiness — One to two sentences. Kabir's honest gut read. NOT a score. Plain language only.
 
@@ -154,12 +209,14 @@ Rules for readiness (pick what fits; paraphrase if needed; never numbers):
 
 11. Never use coaching clichés: 'great step', 'remember the goal is', 'key shift'. Never generic excited-opportunity openings.
 
-12. When the transcript has real back-and-forth (roughly a minute or more of practice), you MUST include at least 2 keyHighlights and at least 2 actionItems unless rule 2d applies (too short / no substance). Do not return empty arrays for those fields when there was enough dialogue to learn from.
+12. When the transcript has real back-and-forth (roughly a minute or more of practice), you MUST include at least 2 anticipatedQuestions entries and at least 2 actionItems unless rule 2d applies (too short / no substance).
 
 FORMAT YOUR RESPONSE AS JSON ONLY:
 {
   "kabirTake": "string",
-  "keyHighlights": ["string"],
+  "anticipatedQuestions": [
+    { "question": "string", "answer": "string" }
+  ],
   "actionItems": ["string"],
   "aboutThem": "string",
   "whatWorked": { "quote": "string", "why": "string" },
@@ -177,6 +234,66 @@ FORMAT YOUR RESPONSE AS JSON ONLY:
 }
 
 Output valid JSON only. No markdown.`;
+
+const ABOUT_THEM_FALLBACK =
+  "I don't know enough about who you're meeting. Before your next session, tell me about them and I'll help you read the room.";
+
+/** Strip trailing ellipsis, broken tails, and obvious template crud from opening lines. */
+function sanitizeBeforeYouWalkIn(raw: string): string {
+  let s = raw.trim();
+  if (!s) return s;
+  s = s.replace(/\u2026+/g, "…");
+  s = s.replace(/\s*…+\s*$/u, ".").replace(/\s*\.{3,}\s*$/u, ".");
+  s = s.replace(/\s+by\.{0,3}\s*$/i, ".");
+  s = s.replace(/\s+(and|or)\s*$/i, ".");
+  const lower = s.toLowerCase();
+  if (
+    /dive into the unique solution|leverage synergies|circle back|touch base/i.test(
+      lower
+    )
+  ) {
+    return (
+      "Open with the problem in one clear sentence. Give one concrete fact or number from your situation. " +
+      "Stop talking and let them respond."
+    );
+  }
+  if (!/[.!?]"?\s*$/.test(s) && s.length > 80) {
+    s = `${s.trimEnd()}.`;
+  }
+  return s.trim();
+}
+
+/** Remove meta prefixes the model sometimes adds instead of literal spoken lines. */
+function sanitizeSpokenLine(raw: string): string {
+  let s = raw.trim();
+  if (!s) return s;
+  s = s.replace(
+    /^(you (could|should|might|can|want to) (try )?(to )?|try (to )?|say:\s*|tell them:\s*|your line:\s*|response:\s*)/i,
+    ""
+  );
+  s = s.replace(/^(the user should say:\s*)/i, "");
+  return s.replace(/^["']|["']$/g, "").trim();
+}
+
+/** Generic empathy blobs with no anchor from the user — replace with honest fallback. */
+function aboutThemLooksUnmoored(text: string, transcriptSample: string): boolean {
+  const t = text.trim();
+  if (t.length < 24) return false;
+  const lower = t.toLowerCase();
+  const sample = transcriptSample.toLowerCase();
+  const hasNameLike =
+    /\b([A-Z][a-z]{2,15})\b/.test(text) ||
+    /\b(manager|professor|roommate|partner|boss|interviewer|recruiter|ceo|client|hr|human resources|landlord|advisor|dean)\b/i.test(
+      sample
+    );
+  const vaguePhrases =
+    /they (may|might|will probably)|likely to (feel|react)|in general|people often|typically they/i.test(
+      lower
+    );
+  if (vaguePhrases && !hasNameLike) return true;
+  if (t.length > 120 && !hasNameLike && /they (are|'re) /i.test(lower)) return true;
+  return false;
+}
 
 function asMoment(
   raw: unknown,
@@ -200,8 +317,14 @@ function asMoment(
   return { quote: "", timestamp: "", why: "" };
 }
 
+export type NormalizeNotesOptions = {
+  /** Used to detect generic aboutThem when the transcript has no real detail about the other person. */
+  transcriptSample?: string;
+};
+
 function normalizeKabirNotesOutput(
-  raw: Record<string, unknown>
+  raw: Record<string, unknown>,
+  opts?: NormalizeNotesOptions
 ): Record<string, unknown> {
   const out: Record<string, unknown> = { ...raw };
 
@@ -229,11 +352,22 @@ function normalizeKabirNotesOutput(
   delete out.overall_score;
   delete out.scoreSuppressedReason;
 
-  const rawKh = out.keyHighlights;
-  out.keyHighlights = Array.isArray(rawKh)
-    ? rawKh
-        .filter((x): x is string => typeof x === "string" && Boolean(x.trim()))
-        .map((x) => x.trim())
+  delete out.keyHighlights;
+
+  const rawAq = out.anticipatedQuestions;
+  out.anticipatedQuestions = Array.isArray(rawAq)
+    ? rawAq
+        .map((item) => {
+          if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+          const o = item as Record<string, unknown>;
+          const question =
+            typeof o.question === "string" ? o.question.trim() : "";
+          let answer =
+            typeof o.answer === "string" ? sanitizeSpokenLine(o.answer) : "";
+          if (!question || !answer) return null;
+          return { question, answer };
+        })
+        .filter((x): x is { question: string; answer: string } => Boolean(x))
         .slice(0, 5)
     : [];
 
@@ -310,10 +444,19 @@ function normalizeKabirNotesOutput(
     if (alt) out.beforeYouWalkIn = alt;
   }
 
+  if (typeof out.beforeYouWalkIn === "string" && out.beforeYouWalkIn.trim()) {
+    out.beforeYouWalkIn = sanitizeBeforeYouWalkIn(String(out.beforeYouWalkIn));
+  }
+
   if (typeof out.aboutThem === "string") {
-    const t = out.aboutThem.trim();
-    if (t) out.aboutThem = t;
-    else delete out.aboutThem;
+    let t = out.aboutThem.trim();
+    if (t) {
+      const sample = opts?.transcriptSample ?? "";
+      if (sample && aboutThemLooksUnmoored(t, sample)) {
+        t = ABOUT_THEM_FALLBACK;
+      }
+      out.aboutThem = t;
+    } else delete out.aboutThem;
   } else {
     delete out.aboutThem;
   }
@@ -321,26 +464,40 @@ function normalizeKabirNotesOutput(
   return out;
 }
 
+export type GenerateKabirNotesOptions = {
+  /** Delete cached report and run GPT again (same transcript). */
+  forceRegenerate?: boolean;
+};
+
 export async function generateKabirNotes(
   sessionId: string,
-  userId: string
+  userId: string,
+  options?: GenerateKabirNotesOptions
 ): Promise<{ notes: Record<string, unknown>; fromCache: boolean } | null> {
   const supabase = createSupabaseAdmin();
 
-  const { data: existing } = await supabase
-    .from("forensics_reports")
-    .select("*")
-    .eq("session_id", sessionId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  if (options?.forceRegenerate) {
+    const allowed = await sessionBelongsToUser(supabase, sessionId, userId);
+    if (!allowed) {
+      console.warn("[NOTES] regenerate denied — session not owned:", sessionId);
+      return null;
+    }
+  } else {
+    const { data: existing } = await supabase
+      .from("forensics_reports")
+      .select("*")
+      .eq("session_id", sessionId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-  if (existing) {
-    console.log("[NOTES] Found existing report for session:", sessionId);
-    return {
-      notes: existing.moments as Record<string, unknown>,
-      fromCache: true,
-    };
+    if (existing) {
+      console.log("[NOTES] Found existing report for session:", sessionId);
+      return {
+        notes: existing.moments as Record<string, unknown>,
+        fromCache: true,
+      };
+    }
   }
 
   const { data: session } = await supabase
@@ -354,27 +511,25 @@ export async function generateKabirNotes(
     return null;
   }
 
-  let transcript = session.transcript;
+  const transcript = await hydrateTranscriptIfMissing({
+    id: session.id,
+    transcript: session.transcript,
+    vapi_call_id: session.vapi_call_id ?? null,
+  });
 
-  if (!transcript && session.vapi_call_id) {
-    console.log(
-      "[NOTES] No transcript in DB, fetching from Vapi API for call:",
-      session.vapi_call_id
-    );
-    transcript = await fetchTranscriptFromVapi(session.vapi_call_id);
-
-    if (transcript) {
-      await supabase
-        .from("sessions")
-        .update({ transcript })
-        .eq("id", sessionId);
-      console.log("[NOTES] Saved Vapi transcript to DB for session:", sessionId);
-    }
-  }
-
-  if (!transcript) {
+  if (transcriptLooksEmpty(transcript)) {
     console.log("[NOTES] No transcript available for session:", sessionId);
     return null;
+  }
+
+  if (options?.forceRegenerate) {
+    const { error: delErr } = await supabase
+      .from("forensics_reports")
+      .delete()
+      .eq("session_id", sessionId);
+    if (delErr) {
+      console.error("[NOTES] forensics delete for regenerate:", delErr.message);
+    }
   }
 
   const openai = getOpenAIClient();
@@ -391,13 +546,13 @@ export async function generateKabirNotes(
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o",
-      temperature: 0.22,
+      temperature: 0.18,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: NOTES_PROMPT },
         {
           role: "user",
-          content: `CONTEXT THEY SHARED BEFORE THE CALL (email, JD, message, paste — read carefully, extract facts for keyHighlights and actionItems):
+          content: `CONTEXT THEY SHARED BEFORE THE CALL (email, JD, message, paste — read carefully, extract facts for actionItems and scenario-specific anticipatedQuestions):
 ${session.context && String(session.context).trim() ? String(session.context).trim() : "none"}
 
 SESSION_DURATION_SECONDS: ${durationSec === null ? "unknown" : String(durationSec)}
@@ -406,13 +561,15 @@ Full transcript of the practice session:
 ${transcriptText}`,
         },
       ],
-      max_tokens: 2800,
+      max_tokens: 3200,
     });
 
     const parsed = JSON.parse(
       completion.choices[0].message.content || "{}"
     ) as Record<string, unknown>;
-    const notes = normalizeKabirNotesOutput(parsed);
+    const notes = normalizeKabirNotesOutput(parsed, {
+      transcriptSample: transcriptText.slice(0, 14_000),
+    });
 
     console.log(
       "[NOTES] Generated notes for session:",

@@ -531,11 +531,20 @@ export function formatKabirNotesForMemory(notes: Record<string, unknown>): strin
   const take = s("kabirTake") || s("summary");
   if (take) parts.push(`Kabir's take: ${take}`);
 
-  const highlights = notes.keyHighlights;
-  if (Array.isArray(highlights) && highlights.length) {
-    const lines = highlights.filter((x) => typeof x === "string" && x.trim());
+  const aq = notes.anticipatedQuestions;
+  if (Array.isArray(aq) && aq.length) {
+    const lines = aq
+      .map((item) => {
+        if (!item || typeof item !== "object") return "";
+        const o = item as { question?: string; answer?: string };
+        const q = typeof o.question === "string" ? o.question.trim() : "";
+        const a = typeof o.answer === "string" ? o.answer.trim() : "";
+        if (!q || !a) return "";
+        return `Q: ${q}\nA: ${a}`;
+      })
+      .filter(Boolean);
     if (lines.length) {
-      parts.push(`Key highlights:\n${lines.join("\n")}`);
+      parts.push(`Likely questions / suggested lines:\n${lines.join("\n\n")}`);
     }
   }
 

@@ -207,6 +207,10 @@ export async function POST(req: Request) {
         : "Hey. It's Kabir. I'm really glad you're here. What conversation are you looking forward to?";
     }
 
+    const sessionTimeMessage = usage.capExempt
+      ? "Unlimited practice on your account today."
+      : `You have ${formatRemainingTime(usage.remainingSeconds)} left in your free practice bank.`;
+
     return NextResponse.json({
       sessionId: session.id,
       systemPrompt,
@@ -214,7 +218,7 @@ export async function POST(req: Request) {
       cap: {
         ...usage,
         sessionSecondsAllocated: allowedSessionSeconds,
-        sessionTimeMessage: `You have ${formatRemainingTime(usage.remainingSeconds)} left in your free practice bank.`,
+        sessionTimeMessage,
       },
       firstMessage,
     });

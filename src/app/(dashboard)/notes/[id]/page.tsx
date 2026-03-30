@@ -2,6 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { createSupabaseAdmin } from "@/lib/supabase/server";
 import { sessionBelongsToUser } from "@/lib/session-access";
 import { groupSessionsIntoThreads } from "@/lib/session-threading";
+import { hydrateTranscriptIfMissing } from "@/lib/forensics/generate";
 import { NotesClient } from "./notes-client";
 import { redirect } from "next/navigation";
 
@@ -26,11 +27,13 @@ function normalizeTranscriptRows(transcript: unknown): TranscriptRow[] {
       const content =
         typeof item.content === "string"
           ? item.content
-          : typeof item.message === "string"
-            ? item.message
-            : typeof item.text === "string"
-              ? item.text
-              : "";
+          : typeof item.transcript === "string"
+            ? item.transcript
+            : typeof item.message === "string"
+              ? item.message
+              : typeof item.text === "string"
+                ? item.text
+                : "";
       const trimmed = content.trim();
       if (!trimmed) continue;
       rows.push({
@@ -74,11 +77,24 @@ export default async function NotesPage({
     .limit(1)
     .maybeSingle();
 
-  const { data: session } = await supabase
+  const { data: sessionRaw } = await supabase
     .from("sessions")
-    .select("id, user_id, transcript, context, ended_at, started_at, created_at, duration_seconds")
+    .select(
+      "id, user_id, transcript, context, vapi_call_id, ended_at, started_at, created_at, duration_seconds"
+    )
     .eq("id", id)
     .single();
+
+  const session = sessionRaw
+    ? {
+        ...sessionRaw,
+        transcript: await hydrateTranscriptIfMissing({
+          id: sessionRaw.id,
+          transcript: sessionRaw.transcript,
+          vapi_call_id: sessionRaw.vapi_call_id ?? null,
+        }),
+      }
+    : null;
 
   const activeUserIds = [userId];
   const { data: memoryRow } = await supabase
@@ -124,33 +140,41 @@ export default async function NotesPage({
           return ta - tb;
         });
 
-      const nextRows: TranscriptRow[] = [];
-      for (let i = 0; i < ordered.length; i += 1) {
-        const s = ordered[i];
-        const when = s.ended_at
-          ? new Date(s.ended_at).toLocaleDateString(undefined, {
-              month: "short",
-              day: "numeric",
-            })
-          : "recent";
-        nextRows.push({
-          role: "system",
-          content: `Attempt ${i + 1} (${when})`,
-          source: "attempt_marker",
-        });
-        const contextText = typeof s.context === "string" ? s.context.trim() : "";
-        if (contextText) {
+      // One session in the thread: show the real transcript only (no "Attempt 1" wrapper).
+      if (ordered.length === 1) {
+        const only = ordered[0];
+        mergedTranscript = normalizeTranscriptRows(
+          only?.id === session?.id ? session?.transcript : only?.transcript
+        );
+      } else {
+        const nextRows: TranscriptRow[] = [];
+        for (let i = 0; i < ordered.length; i += 1) {
+          const s = ordered[i];
+          const when = s.ended_at
+            ? new Date(s.ended_at).toLocaleDateString(undefined, {
+                month: "short",
+                day: "numeric",
+              })
+            : "recent";
           nextRows.push({
-            role: "user",
-            content: `[Context for this attempt]\n${contextText.slice(0, 1500)}`,
-            source: "attempt_context",
+            role: "system",
+            content: `Attempt ${i + 1} (${when})`,
+            source: "attempt_marker",
           });
+          const contextText = typeof s.context === "string" ? s.context.trim() : "";
+          if (contextText) {
+            nextRows.push({
+              role: "user",
+              content: `[Context for this attempt]\n${contextText.slice(0, 1500)}`,
+              source: "attempt_context",
+            });
+          }
+          nextRows.push(...normalizeTranscriptRows(s.transcript));
         }
-        nextRows.push(...normalizeTranscriptRows(s.transcript));
-      }
 
-      if (nextRows.length > 0) {
-        mergedTranscript = nextRows.slice(-1200);
+        if (nextRows.length > 0) {
+          mergedTranscript = nextRows.slice(-1200);
+        }
       }
     }
   }

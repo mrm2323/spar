@@ -114,6 +114,7 @@ export default function MemoryDashboardPage() {
   const [newGoal, setNewGoal] = useState("");
   const [goalSaving, setGoalSaving] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [clearingPatterns, setClearingPatterns] = useState(false);
   const [memoryActionBanner, setMemoryActionBanner] = useState<string | null>(
     null
   );
@@ -259,6 +260,7 @@ export default function MemoryDashboardPage() {
       const data = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
         error?: string;
+        supermemoryCleared?: boolean;
       };
       if (!res.ok || data.ok === false) {
         setMemoryActionBanner(
@@ -269,7 +271,9 @@ export default function MemoryDashboardPage() {
         return;
       }
       setMemoryActionBanner(
-        "cleared. kabir's coaching memory on this account is wiped."
+        data.supermemoryCleared === false
+          ? "cleared on this app. cloud memory may still be clearing — try again in a minute if something still feels off."
+          : "cleared. kabir's coaching memory on this account is wiped."
       );
       await loadEntriesAndPref();
       await loadProfile();
@@ -277,6 +281,41 @@ export default function MemoryDashboardPage() {
       await loadTimeline();
     } finally {
       setClearing(false);
+    }
+  }
+
+  async function clearPatternsOnly() {
+    if (
+      !confirm(
+        "reset pattern recognition only? your facts and portrait stay."
+      )
+    ) {
+      return;
+    }
+    setClearingPatterns(true);
+    setMemoryActionBanner(null);
+    try {
+      const res = await fetch("/api/memory/clear-patterns", {
+        method: "POST",
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+      };
+      if (!res.ok || data.ok === false) {
+        setMemoryActionBanner(
+          typeof data.error === "string"
+            ? data.error
+            : "couldn't reset patterns. try again?"
+        );
+        return;
+      }
+      setMemoryActionBanner(
+        "habit patterns cleared. portrait and facts unchanged."
+      );
+      await loadProfile();
+    } finally {
+      setClearingPatterns(false);
     }
   }
 
@@ -541,8 +580,10 @@ export default function MemoryDashboardPage() {
                 type="button"
                 onClick={() => void addGoal()}
                 disabled={goalSaving || !newGoal.trim()}
-                className="rounded-xl bg-gradient-to-r from-cyan-400 to-violet-500 px-5 py-3 text-sm font-semibold text-[#0A0A0F] transition-colors hover:opacity-95 disabled:opacity-40"
+                aria-busy={goalSaving}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-violet-500 px-5 py-3 text-sm font-semibold text-[#0A0A0F] transition-colors hover:opacity-95 disabled:opacity-40"
               >
+                {goalSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                 {goalSaving ? "adding…" : "add goal"}
               </button>
             </div>
@@ -610,13 +651,15 @@ export default function MemoryDashboardPage() {
             type="button"
             disabled={savingPref}
             onClick={() => void savePreference(!enabled)}
-            className={`shrink-0 rounded-full px-5 py-2 text-xs font-semibold transition-colors ${
+            aria-busy={savingPref}
+            className={`inline-flex shrink-0 items-center gap-2 rounded-full px-5 py-2 text-xs font-semibold transition-colors ${
               enabled
                 ? "border border-cyan-500/50 bg-cyan-500/12 text-cyan-100"
                 : "border border-slate-600 bg-slate-800 text-slate-300"
             }`}
           >
-            {savingPref ? "…" : enabled ? "memory on" : "memory off"}
+            {savingPref ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            {savingPref ? "saving…" : enabled ? "memory on" : "memory off"}
           </button>
         </div>
 
@@ -624,10 +667,29 @@ export default function MemoryDashboardPage() {
           <div>
             <button
               type="button"
-              disabled={clearing}
-              onClick={() => void clearAllMemories()}
-              className="text-xs text-rose-400/80 underline decoration-rose-500/30 underline-offset-2 transition-colors hover:text-rose-300 disabled:opacity-40"
+              disabled={clearingPatterns || clearing}
+              onClick={() => void clearPatternsOnly()}
+              aria-busy={clearingPatterns}
+              className="inline-flex items-center gap-2 text-xs text-cyan-300/90 underline decoration-cyan-500/35 underline-offset-2 transition-colors hover:text-cyan-200 disabled:opacity-40"
             >
+              {clearingPatterns ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : null}
+              {clearingPatterns ? "clearing patterns…" : "reset pattern recognition"}
+            </button>
+            <p className="mt-1.5 text-[11px] text-slate-600">
+              clears habit labels only. your facts and portrait stay until the next full reset.
+            </p>
+          </div>
+          <div>
+            <button
+              type="button"
+              disabled={clearing || clearingPatterns}
+              onClick={() => void clearAllMemories()}
+              aria-busy={clearing}
+              className="inline-flex items-center gap-2 text-xs text-rose-400/80 underline decoration-rose-500/30 underline-offset-2 transition-colors hover:text-rose-300 disabled:opacity-40"
+            >
+              {clearing ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
               {clearing ? "clearing…" : "make kabir forget everything"}
             </button>
           </div>

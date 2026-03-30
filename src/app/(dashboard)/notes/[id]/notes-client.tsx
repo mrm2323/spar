@@ -10,6 +10,7 @@ import {
   Copy,
   Check,
   Square,
+  Loader2,
 } from "lucide-react";
 import { extractQuotedSection, type TranscriptMessage } from "@/lib/transcript-stats";
 import { SessionOutcomeFollowUp } from "./session-outcome-followup";
@@ -42,7 +43,9 @@ interface NotesData {
   what_worked?: string;
   what_to_rethink?: string;
   actionItems?: string[];
+  /** @deprecated Removed from generation; ignored in UI. */
   keyHighlights?: string[];
+  anticipatedQuestions?: Array<{ question?: string; answer?: string }>;
   wordPattern?: WordPattern;
   beforeYouWalkIn?: string;
   next_time?: string;
@@ -53,6 +56,17 @@ interface NotesData {
   cross_session_insight?: string;
   /** Empathy read on the other person in the conversation */
   aboutThem?: string;
+}
+
+/** Drop deprecated fields from stored reports so the UI matches current product. */
+function stripLegacyNotePayload(
+  raw: Record<string, unknown> | null | undefined
+): NotesData | null {
+  if (!raw || typeof raw !== "object") return null;
+  const { keyHighlights: _kh, ...rest } = raw as Record<string, unknown> & {
+    keyHighlights?: unknown;
+  };
+  return rest as NotesData;
 }
 
 /** Text shown for ARE YOU READY (new `readiness` field or legacy label mapping). */
@@ -178,11 +192,13 @@ function normalizeMessages(transcript: unknown): TranscriptMessage[] {
         const contentRaw =
           typeof row.content === "string"
             ? row.content
-            : typeof row.message === "string"
-              ? row.message
-              : typeof row.text === "string"
-                ? row.text
-                : "";
+            : typeof row.transcript === "string"
+              ? row.transcript
+              : typeof row.message === "string"
+                ? row.message
+                : typeof row.text === "string"
+                  ? row.text
+                  : "";
         return { role: roleRaw, content: contentRaw };
       })
       .filter((m) => {
@@ -223,7 +239,13 @@ export function NotesClient({
   completedSessionsCount: number;
 }) {
   const router = useRouter();
-  const [notes, setNotes] = useState<NotesData | null>(initialNotes || null);
+  const [notes, setNotes] = useState<NotesData | null>(() =>
+    stripLegacyNotePayload(
+      initialNotes && typeof initialNotes === "object"
+        ? (initialNotes as Record<string, unknown>)
+        : null
+    )
+  );
   const [loading, setLoading] = useState(!initialNotes);
   const [message, setMessage] = useState(
     "Kabir is reviewing your conversation..."
@@ -241,6 +263,11 @@ export function NotesClient({
     null
   );
   const [copiedBefore, setCopiedBefore] = useState(false);
+  const [copiedAnticipatedIdx, setCopiedAnticipatedIdx] = useState<number | null>(
+    null
+  );
+  const [regeneratingNotes, setRegeneratingNotes] = useState(false);
+  const [regenerateError, setRegenerateError] = useState<string | null>(null);
   const outcomeSectionRef = useRef<HTMLElement | null>(null);
 
   async function restartPractice() {
@@ -366,7 +393,11 @@ export function NotesClient({
           checkData.status === "ready" &&
           checkData.report?.moments
         ) {
-          setNotes(checkData.report.moments);
+          setNotes(
+            stripLegacyNotePayload(
+              checkData.report.moments as Record<string, unknown>
+            )
+          );
           setLoading(false);
           return;
         }
@@ -393,7 +424,9 @@ export function NotesClient({
         if (cancelled) return;
 
         if (data.notes) {
-          setNotes(data.notes);
+          setNotes(
+            stripLegacyNotePayload(data.notes as Record<string, unknown>)
+          );
           setLoading(false);
           return;
         }
@@ -512,11 +545,19 @@ export function NotesClient({
     );
   }, [notes]);
 
-  const keyHighlights = useMemo(() => {
-    if (!notes?.keyHighlights || !Array.isArray(notes.keyHighlights)) return [];
-    return notes.keyHighlights.filter(
-      (x): x is string => typeof x === "string" && x.trim().length > 0
-    );
+  const anticipatedQuestions = useMemo(() => {
+    const raw = notes?.anticipatedQuestions;
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((row) => {
+        const question =
+          row && typeof row.question === "string" ? row.question.trim() : "";
+        const answer =
+          row && typeof row.answer === "string" ? row.answer.trim() : "";
+        if (!question || !answer) return null;
+        return { question, answer };
+      })
+      .filter((x): x is { question: string; answer: string } => Boolean(x));
   }, [notes]);
 
   const showYourWords = useMemo(() => {
@@ -637,6 +678,65 @@ export function NotesClient({
     }
   }
 
+  async function copyAnticipatedAnswer(idx: number, answer: string) {
+    try {
+      await navigator.clipboard.writeText(answer);
+      setCopiedAnticipatedIdx(idx);
+      window.setTimeout(() => {
+        setCopiedAnticipatedIdx((cur) => (cur === idx ? null : cur));
+      }, 2000);
+    } catch {
+      /* noop */
+    }
+  }
+
+  async function regenerateNotes() {
+    if (
+      !window.confirm(
+        "Replace Kabir's notes with a fresh version? You can't undo this."
+      )
+    ) {
+      return;
+    }
+    setRegenerateError(null);
+    setRegeneratingNotes(true);
+    trackEvent("notes_regenerate_clicked", { session_id: sessionId });
+    try {
+      const res = await fetch(`/api/forensics/${sessionId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ regenerate: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setRegenerateError(
+          typeof data?.error === "string"
+            ? data.error
+            : "Couldn't refresh notes. Try again in a moment."
+        );
+        trackEvent("notes_regenerate_failed", {
+          session_id: sessionId,
+          status: res.status,
+        });
+        return;
+      }
+      if (data.notes) {
+        setNotes(
+          stripLegacyNotePayload(data.notes as Record<string, unknown>)
+        );
+        trackEvent("notes_regenerate_succeeded", { session_id: sessionId });
+      }
+    } catch {
+      setRegenerateError("Couldn't refresh notes. Try again in a moment.");
+      trackEvent("notes_regenerate_failed", {
+        session_id: sessionId,
+        status: 0,
+      });
+    } finally {
+      setRegeneratingNotes(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center text-[#E2E8F0]">
@@ -704,6 +804,22 @@ export function NotesClient({
         <h1 className="mt-1 text-xl font-semibold tracking-tight text-[#E2E8F0]">
           Kabir&apos;s notes
         </h1>
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <button
+            type="button"
+            disabled={regeneratingNotes}
+            onClick={() => void regenerateNotes()}
+            className="inline-flex items-center gap-1.5 text-xs text-slate-500 underline-offset-2 hover:text-slate-300 hover:underline disabled:pointer-events-none disabled:opacity-50"
+          >
+            {regeneratingNotes ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : null}
+            Regenerate notes
+          </button>
+          {regenerateError ? (
+            <span className="text-xs text-amber-400/90">{regenerateError}</span>
+          ) : null}
+        </div>
         {(initialThreadAttempts || 1) > 1 ? (
           <p className="mt-2 text-xs text-cyan-300/85">
             Thread history: {initialThreadAttempts} attempts combined
@@ -725,31 +841,6 @@ export function NotesClient({
           </p>
         </section>
 
-        {/* KEY HIGHLIGHTS */}
-        {keyHighlights.length > 0 ? (
-          <section className="mt-12 border-l-2 border-sky-500/50 pl-4">
-            <h2
-              className="font-mono text-[10px] uppercase tracking-[0.2em] text-slate-400"
-              style={{
-                fontFamily: "var(--font-ibm-mono), ui-monospace, monospace",
-              }}
-            >
-              Key highlights
-            </h2>
-            <ul className="mt-4 space-y-3">
-              {keyHighlights.map((line, i) => (
-                <li
-                  key={i}
-                  className="flex gap-2 text-[15px] leading-relaxed text-[#E2E8F0]"
-                >
-                  <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-sky-400/90" />
-                  <span>{line}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
-
         {/* ABOUT THE OTHER PERSON */}
         {aboutThem ? (
           <section className="mt-12 border-l-2 border-violet-500/45 pl-4">
@@ -763,6 +854,61 @@ export function NotesClient({
             </h2>
             <p className="mt-3 text-[15px] leading-relaxed text-[#E2E8F0]">
               {renderWithDoubleQuoteHighlights(aboutThem)}
+            </p>
+          </section>
+        ) : null}
+
+        {/* WHAT THEY'LL PROBABLY ASK */}
+        {anticipatedQuestions.length > 0 ? (
+          <section className="mt-12 border-l-2 border-amber-500/45 pl-4">
+            <h2
+              className="font-mono text-[10px] uppercase tracking-[0.2em] text-slate-400"
+              style={{
+                fontFamily: "var(--font-ibm-mono), ui-monospace, monospace",
+              }}
+            >
+              What they&apos;ll probably ask
+            </h2>
+            <p className="mt-2 text-xs leading-relaxed text-slate-500">
+              Likely questions from the other person — and exact lines you can say back.
+            </p>
+            <ul className="mt-4 space-y-4">
+              {anticipatedQuestions.map((row, i) => (
+                <li
+                  key={i}
+                  className="rounded-lg border border-[#1E1E2E] p-4"
+                  style={{ background: CARD }}
+                >
+                  <p className="text-[15px] font-semibold leading-snug text-[#E2E8F0]">
+                    {row.question}
+                  </p>
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <p className="flex-1 text-sm leading-relaxed text-slate-400">
+                      {row.answer}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => void copyAnticipatedAnswer(i, row.answer)}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-cyan-500/35 bg-cyan-500/10 px-3 py-1.5 text-xs font-medium text-cyan-200/95 transition-colors hover:bg-cyan-500/20"
+                    >
+                      {copiedAnticipatedIdx === i ? (
+                        <Check className="h-3.5 w-3.5" />
+                      ) : (
+                        <Copy className="h-3.5 w-3.5" />
+                      )}
+                      {copiedAnticipatedIdx === i ? "Copied" : "Copy answer"}
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : (session?.duration_seconds ?? 0) >= 60 ? (
+          <section className="mt-12 border-l-2 border-slate-600/40 pl-4">
+            <p className="text-xs leading-relaxed text-slate-500">
+              Kabir didn&apos;t surface specific questions to prep for — that
+              usually means the other side stayed vague in this run. A bit more
+              back-and-forth next time often draws them out.
             </p>
           </section>
         ) : null}
@@ -1030,14 +1176,14 @@ export function NotesClient({
             type="button"
             onClick={() => void copyBeforeYouWalkIn()}
             disabled={!beforeYouWalkIn}
-            className="mt-5 inline-flex items-center gap-2 text-xs text-cyan-400/90 transition-colors hover:text-cyan-300 disabled:opacity-40"
+            className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-400/40 bg-cyan-500/15 px-5 py-3.5 text-sm font-semibold text-cyan-50 shadow-[0_0_0_1px_rgba(34,211,238,0.12)_inset] transition-colors hover:bg-cyan-500/25 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto sm:min-w-[200px]"
           >
             {copiedBefore ? (
-              <Check className="h-3.5 w-3.5" />
+              <Check className="h-4 w-4" />
             ) : (
-              <Copy className="h-3.5 w-3.5" />
+              <Copy className="h-4 w-4" />
             )}
-            {copiedBefore ? "Copied" : "Copy this"}
+            {copiedBefore ? "Copied to clipboard" : "Copy opening line"}
           </button>
         </section>
 
@@ -1075,9 +1221,14 @@ export function NotesClient({
               type="button"
               disabled={restarting}
               onClick={restartPractice}
+              aria-busy={restarting}
               className="flex w-full items-center justify-center gap-2 rounded-lg bg-cyan-600 px-5 py-3.5 text-sm font-semibold text-white transition-colors hover:bg-cyan-500 disabled:opacity-50"
             >
-              <Mic className="h-4 w-4" />
+              {restarting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Mic className="h-4 w-4" />
+              )}
               {restarting ? "starting…" : "run it again"}
             </button>
           )}
@@ -1085,8 +1236,12 @@ export function NotesClient({
             type="button"
             disabled={continuing}
             onClick={() => void continueThisPractice()}
-            className="flex w-full items-center justify-center rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-5 py-3.5 text-sm font-semibold text-cyan-100 transition-colors hover:bg-cyan-500/20 disabled:opacity-50"
+            aria-busy={continuing}
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-5 py-3.5 text-sm font-semibold text-cyan-100 transition-colors hover:bg-cyan-500/20 disabled:opacity-50"
           >
+            {continuing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : null}
             {continuing ? "starting…" : "pick up where you left off"}
           </button>
           <button
@@ -1137,12 +1292,20 @@ export function NotesClient({
           {transcriptOpen && (
             <div className="mt-4 space-y-3 text-sm">
               {messages.length === 0 ? (
-                <p className="text-slate-400">Transcript not available yet.</p>
+                <p className="text-sm leading-relaxed text-slate-400">
+                  No transcript stored for this session yet. If you just finished the call,
+                  refresh the page — we pull it from Vapi when the webhook is slow. If it
+                  stays empty, the call may not have linked to this session.
+                </p>
               ) : (
                 transcriptPreview.map((m, i) => {
                   const role = (m.role || "").toLowerCase();
                   const isUser =
-                    role === "user" || role === "customer";
+                    role === "user" ||
+                    role === "customer" ||
+                    role === "caller" ||
+                    role === "client" ||
+                    role === "human";
                   const isSystem =
                     role === "system" || role === "status" || role === "attempt_marker";
                   const content = m.content || "";
@@ -1160,12 +1323,10 @@ export function NotesClient({
                             : ""
                       }`}
                     >
-                      <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500">
+                      <span className="mb-0.5 block text-[10px] font-mono uppercase tracking-wider text-slate-500">
                         {isSystem ? "System" : isUser ? "You" : "Kabir"}
                       </span>
-                      <p
-                        className="mt-0.5 whitespace-pre-wrap text-slate-300"
-                      >
+                      <p className="whitespace-pre-wrap text-slate-300">
                         {content}
                       </p>
                     </div>
@@ -1208,10 +1369,12 @@ export function NotesClient({
 
         <button
           type="button"
-          onClick={handleDelete}
+          onClick={() => void handleDelete()}
           disabled={deleting}
-          className="mt-8 w-full text-center text-xs text-slate-500 underline hover:text-slate-300 disabled:opacity-50"
+          aria-busy={deleting}
+          className="mt-8 inline-flex w-full items-center justify-center gap-2 text-center text-xs text-slate-500 underline hover:text-slate-300 disabled:opacity-50"
         >
+          {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
           {deleting ? "Deleting…" : "Delete this session"}
         </button>
       </div>

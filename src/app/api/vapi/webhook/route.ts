@@ -70,9 +70,11 @@ function sanitizeTranscript(transcript: unknown): unknown {
           ? item.message
           : typeof item.content === "string"
             ? item.content
-            : typeof item.text === "string"
-              ? item.text
-              : "";
+            : typeof item.transcript === "string"
+              ? item.transcript
+              : typeof item.text === "string"
+                ? item.text
+                : "";
 
       if (shouldDropTranscriptMessage(content)) return null;
 
@@ -98,11 +100,13 @@ function normalizeTranscriptForMerge(transcript: unknown): SanitizedTranscriptRo
         const content =
           typeof item.content === "string"
             ? item.content
-            : typeof item.message === "string"
-              ? item.message
-              : typeof item.text === "string"
-                ? item.text
-                : "";
+            : typeof item.transcript === "string"
+              ? item.transcript
+              : typeof item.message === "string"
+                ? item.message
+                : typeof item.text === "string"
+                  ? item.text
+                  : "";
         const trimmed = content.trim();
         if (!trimmed) return null;
         return {
