@@ -17,6 +17,7 @@ import { createHash } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import OpenAI from "openai";
 import { getRecentSessionSummariesForPrompt } from "@/lib/kabir/session-history";
+import { getMemoryResetAt } from "@/lib/memory/preferences";
 
 /** API base — https://api.supermemory.ai/v3 */
 export const SUPERMEMORY_URL = "https://api.supermemory.ai/v3";
@@ -431,9 +432,10 @@ export async function buildFullKabirContext(
   supabase: SupabaseClient,
   options?: { resumeSessionId?: string | null }
 ): Promise<string> {
+  const resetAfterIso = await getMemoryResetAt(userId);
   const [bundle, dbHistory] = await Promise.all([
     buildKabirMemoryBundle(userId, options),
-    getRecentSessionSummariesForPrompt(supabase, userId, 22),
+    getRecentSessionSummariesForPrompt(supabase, userId, 22, { resetAfterIso }),
   ]);
 
   const parts: string[] = [];

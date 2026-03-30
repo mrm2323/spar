@@ -24,11 +24,6 @@ interface PastSession {
   thread_attempts?: number;
 }
 
-interface PatternInsight {
-  weakness: string;
-  total_sessions: number;
-}
-
 interface SessionCapStatus {
   capSeconds: number;
   usedSeconds: number;
@@ -89,11 +84,11 @@ function DashboardInner() {
   /** Chosen preset — sent as `situationPreset`; not injected as bracket text in the textarea. */
   const [selectedSituation, setSelectedSituation] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [dashboardDataLoading, setDashboardDataLoading] = useState(true);
   const [showAllSessions, setShowAllSessions] = useState(false);
   const [sessions, setSessions] = useState<PastSession[]>([]);
   /** From user_memory.total_sessions — avoids “first time?” while history list is still syncing */
   const [practiceSessionCount, setPracticeSessionCount] = useState(0);
-  const [pattern, setPattern] = useState<PatternInsight | null>(null);
   const [files, setFiles] = useState<ProcessedFile[]>([]);
   const [fileProcessing, setFileProcessing] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -102,7 +97,6 @@ function DashboardInner() {
   const [capStatus, setCapStatus] = useState<SessionCapStatus | null>(null);
   const [memorySnippet, setMemorySnippet] = useState<string | null>(null);
   const [knownPeople, setKnownPeople] = useState<string[]>([]);
-  const [patterns, setPatterns] = useState<Array<{ name: string; sessionCount: number }>>([]);
   const [people, setPeople] = useState<Array<{ relationship?: string }>>([]);
   const [goalEntries, setGoalEntries] = useState<Array<{ metadata?: { kabirNoticedAt?: string } }>>([]);
   // const [phone, setPhone] = useState("");
@@ -185,16 +179,17 @@ function DashboardInner() {
         if (typeof sessionsData.practiceSessionCount === "number") {
           setPracticeSessionCount(sessionsData.practiceSessionCount);
         }
-        if (sessionsData.pattern) setPattern(sessionsData.pattern);
         if (sessionsData.cap) setCapStatus(sessionsData.cap);
-        if (Array.isArray(profileData.patterns)) setPatterns(profileData.patterns);
         if (Array.isArray(peopleData.people)) setPeople(peopleData.people);
         const goals = (memoryData.memories || []).filter(
           (e: any) => e.metadata?.category === "goals"
         );
         if (Array.isArray(goals)) setGoalEntries(goals);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        setDashboardDataLoading(false);
+      });
 
     // fetch("/api/user/phone")
     //   .then((r) => r.json())
@@ -595,20 +590,25 @@ function DashboardInner() {
 
       {/* MIDDLE — sessions or first-time */}
       <div className="mt-10 border-t border-white/[0.06] pt-14">
-        {sessions.length > 0 ? (
+        {dashboardDataLoading ? (
+          <div className="rounded-xl border border-slate-700/50 bg-slate-900/35 p-8 text-center">
+            <div className="flex items-center justify-center gap-2 text-sm text-slate-400">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              loading your practice history...
+            </div>
+          </div>
+        ) : sessions.length > 0 ? (
           <>
-            {sessions.length >= 3 && (pattern || memorySnippet) ? (
+            {sessions.length >= 3 && memorySnippet ? (
               <Link
                 href="/dashboard/memory"
                 className="mb-8 block rounded-2xl border border-cyan-500/25 bg-cyan-500/[0.06] px-5 py-4 text-left transition-colors hover:border-violet-400/35"
               >
                 <p className="text-[11px] font-medium uppercase tracking-wider text-cyan-400/90">
-                  kabir has noticed
+                  kabir remembers
                 </p>
                 <p className="mt-2 text-sm font-medium italic leading-relaxed text-violet-200/95">
-                  {pattern?.weakness
-                    ? `you tend to ${pattern.weakness}`
-                    : memorySnippet}
+                  {memorySnippet}
                 </p>
                 <p className="mt-2 text-xs text-[#94A3B8]">open what kabir knows →</p>
               </Link>
@@ -673,11 +673,10 @@ function DashboardInner() {
       </div>
 
       {/* Understanding Map — shows if any data exists */}
-      {(sessions.length > 0 || patterns.length > 0 || people.length > 0 || goalEntries.length > 0) && (
+      {(sessions.length > 0 || people.length > 0 || goalEntries.length > 0) && (
         <div className="mt-10 border-t border-slate-800/70 pt-10">
           <UnderstandingMap
             sessionCount={sessions.length}
-            patterns={patterns}
             people={people}
             goalEntries={goalEntries}
           />
@@ -692,8 +691,9 @@ export default function DashboardPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-[40vh] items-center justify-center text-slate-400">
-          kabir&apos;s thinking…
+        <div className="flex min-h-[40vh] items-center justify-center gap-2 text-slate-400">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span>kabir&apos;s thinking…</span>
         </div>
       }
     >

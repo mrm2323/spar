@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { createSupabaseAdmin } from "@/lib/supabase/server";
 import { hasSupermemory } from "@/lib/kabir/memory";
+import { getMemoryResetAt } from "@/lib/memory/preferences";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -23,14 +24,21 @@ export async function GET() {
   }
 
   const supabase = createSupabaseAdmin();
+  const resetAfterIso = await getMemoryResetAt(userId);
 
-  const { data: sessions, error: sessErr } = await supabase
+  let sessionsQuery = supabase
     .from("sessions")
     .select("id, context, ended_at, created_at")
     .eq("user_id", userId)
     .eq("status", "completed")
     .order("ended_at", { ascending: false })
     .limit(40);
+
+  if (resetAfterIso) {
+    sessionsQuery = sessionsQuery.gte("created_at", resetAfterIso);
+  }
+
+  const { data: sessions, error: sessErr } = await sessionsQuery;
 
   if (sessErr) {
     console.error("[memory/history] sessions", sessErr);

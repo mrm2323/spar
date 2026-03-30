@@ -1,6 +1,7 @@
 import { clerkClient } from "@clerk/nextjs/server";
 
 const MEMORY_PREF_KEY = "useMemoryInCoaching";
+const MEMORY_RESET_AT_KEY = "memoryResetAt";
 
 export async function getMemoryPreference(userId: string): Promise<boolean> {
   try {
@@ -24,6 +25,30 @@ export async function setMemoryPreference(
   await client.users.updateUserMetadata(userId, {
     publicMetadata: {
       [MEMORY_PREF_KEY]: enabled,
+    },
+  });
+}
+
+export async function getMemoryResetAt(userId: string): Promise<string | null> {
+  try {
+    const client = await clerkClient();
+    const user = await client.users.getUser(userId);
+    const value = user.publicMetadata?.[MEMORY_RESET_AT_KEY];
+    return typeof value === "string" && value.trim() ? value : null;
+  } catch (err) {
+    console.error("[MEMORY PREF] Failed to read reset marker:", err);
+    return null;
+  }
+}
+
+export async function setMemoryResetAt(
+  userId: string,
+  iso: string
+): Promise<void> {
+  const client = await clerkClient();
+  await client.users.updateUserMetadata(userId, {
+    publicMetadata: {
+      [MEMORY_RESET_AT_KEY]: iso,
     },
   });
 }

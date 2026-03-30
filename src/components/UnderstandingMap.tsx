@@ -16,14 +16,12 @@ type InsightScore = {
 
 interface UnderstandingMapProps {
   sessionCount: number;
-  patterns: Array<{ name: string; sessionCount: number }>;
   people: Array<{ relationship?: string }>;
   goalEntries: Array<{ metadata?: { kabirNoticedAt?: string } }>;
 }
 
 export function UnderstandingMap({
   sessionCount,
-  patterns,
   people,
   goalEntries,
 }: UnderstandingMapProps) {
@@ -33,7 +31,7 @@ export function UnderstandingMap({
     ).length;
     const metrics = computeKabirInsightMetrics({
       sessionCount,
-      patterns,
+      patterns: [],
       people,
       goalEntries,
     });
@@ -48,12 +46,6 @@ export function UnderstandingMap({
         label: "Conversation consistency",
         value: byKey.consistency,
         detail: `${sessionCount} completed session${sessionCount === 1 ? "" : "s"}`,
-      },
-      {
-        key: "patterns",
-        label: "Pattern clarity",
-        value: byKey.patterns,
-        detail: `${patterns.length} communication pattern${patterns.length === 1 ? "" : "s"} tracked`,
       },
       {
         key: "people",
@@ -71,10 +63,10 @@ export function UnderstandingMap({
             : `${progressedGoals}/${goalEntries.length} goals show progress`,
       },
     ];
-  }, [sessionCount, patterns, people, goalEntries]);
+  }, [sessionCount, people, goalEntries]);
 
   // Only show map if there's at least one metric with real data
-  const hasData = sessionCount > 0 || patterns.length > 0 || people.length > 0 || goalEntries.length > 0;
+  const hasData = sessionCount > 0 || people.length > 0 || goalEntries.length > 0;
   if (!hasData) return null;
 
   const CARD =

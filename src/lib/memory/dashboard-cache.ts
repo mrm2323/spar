@@ -19,28 +19,58 @@ export type DashboardCachePayload = {
   generatedAt: string;
 };
 
+function isMissingUserMemoryCacheTableError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const e = error as { code?: unknown; message?: unknown };
+  return (
+    e.code === "PGRST205" &&
+    typeof e.message === "string" &&
+    e.message.includes("user_memory_cache")
+  );
+}
+
+function isMissingUserMemoryColumnError(error: unknown, column: string): boolean {
+  if (!error || typeof error !== "object") return false;
+  const e = error as { code?: unknown; message?: unknown };
+  return (
+    e.code === "PGRST204" &&
+    typeof e.message === "string" &&
+    e.message.includes(`'${column}'`) &&
+    e.message.includes("user_memory")
+  );
+}
+
 /**
  * Fingerprint for cache invalidation: completed-session count + latest activity time.
  * Latest time = max per row of (ended_at, created_at) so null ended_at still invalidates correctly.
  */
 async function getSessionFingerprint(
   supabase: SupabaseClient,
-  userId: string
+  userId: string,
+  options?: { resetAfterIso?: string | null }
 ): Promise<{ invalidationKey: string; sessionCount: number }> {
-  const { count } = await supabase
+  let countQuery = supabase
     .from("sessions")
     .select("*", { count: "exact", head: true })
     .eq("user_id", userId)
     .eq("status", "completed");
+  if (options?.resetAfterIso) {
+    countQuery = countQuery.gte("created_at", options.resetAfterIso);
+  }
+  const { count } = await countQuery;
 
   const sessionCount = typeof count === "number" ? count : 0;
 
-  const { data: rows } = await supabase
+  let rowsQuery = supabase
     .from("sessions")
     .select("ended_at, created_at")
     .eq("user_id", userId)
     .eq("status", "completed")
     .limit(120);
+  if (options?.resetAfterIso) {
+    rowsQuery = rowsQuery.gte("created_at", options.resetAfterIso);
+  }
+  const { data: rows } = await rowsQuery;
 
   let latestMs = 0;
   for (const r of rows ?? []) {
@@ -59,7 +89,8 @@ async function getSessionFingerprint(
 
 async function buildCorpus(
   userId: string,
-  supabase: SupabaseClient
+  supabase: SupabaseClient,
+  options?: { resetAfterIso?: string | null }
 ): Promise<string> {
   const chunks: string[] = [];
   if (hasSupermemory()) {
@@ -79,7 +110,9 @@ async function buildCorpus(
       console.error("[dashboard-cache] listMemories", e);
     }
   }
-  const db = await getRecentSessionSummariesForPrompt(supabase, userId, 15);
+  const db = await getRecentSessionSummariesForPrompt(supabase, userId, 15, {
+    resetAfterIso: options?.resetAfterIso,
+  });
   if (db?.trim()) chunks.push(db.trim());
 
   const uniq = [...new Set(chunks)];
@@ -186,21 +219,27 @@ ${corpus || "(empty)"}`,
 }
 
 export async function getOrBuildDashboardCache(
-  userId: string
+  userId: string,
+  options?: { resetAfterIso?: string | null }
 ): Promise<
   DashboardCachePayload & { sessionCount: number; cacheHit: boolean }
 > {
   const supabase = createSupabaseAdmin();
   const { invalidationKey, sessionCount } = await getSessionFingerprint(
     supabase,
-    userId
+    userId,
+    options
   );
 
-  const { data: row } = await supabase
+  const { data: row, error: cacheReadErr } = await supabase
     .from("user_memory_cache")
     .select("profile_text, patterns_json, invalidation_key, generated_at")
     .eq("user_id", userId)
     .maybeSingle();
+
+  if (cacheReadErr && !isMissingUserMemoryCacheTableError(cacheReadErr)) {
+    console.error("[dashboard-cache] read cache failed:", cacheReadErr);
+  }
 
   if (
     row &&
@@ -232,7 +271,7 @@ export async function getOrBuildDashboardCache(
     };
   }
 
-  const corpus = await buildCorpus(userId, supabase);
+  const corpus = await buildCorpus(userId, supabase, options);
   const { portrait, patterns } = await generatePortraitAndPatterns(
     corpus,
     sessionCount
@@ -250,7 +289,7 @@ export async function getOrBuildDashboardCache(
     { onConflict: "user_id" }
   );
 
-  if (upsertErr) {
+  if (upsertErr && !isMissingUserMemoryCacheTableError(upsertErr)) {
     console.error("[dashboard-cache] upsert failed:", upsertErr);
   }
 
@@ -266,7 +305,13 @@ export async function getOrBuildDashboardCache(
 
 export async function deleteUserMemoryCache(userId: string): Promise<void> {
   const supabase = createSupabaseAdmin();
-  await supabase.from("user_memory_cache").delete().eq("user_id", userId);
+  const { error } = await supabase
+    .from("user_memory_cache")
+    .delete()
+    .eq("user_id", userId);
+  if (error && !isMissingUserMemoryCacheTableError(error)) {
+    console.error("[dashboard-cache] delete cache failed:", error);
+  }
 }
 
 /**
@@ -277,26 +322,62 @@ export async function wipeLocalUserMemoryArtifacts(userId: string): Promise<{
   ok: boolean;
 }> {
   const supabase = createSupabaseAdmin();
-  await supabase.from("user_memory_cache").delete().eq("user_id", userId);
+  const { error: cacheDeleteErr } = await supabase
+    .from("user_memory_cache")
+    .delete()
+    .eq("user_id", userId);
+  if (cacheDeleteErr && !isMissingUserMemoryCacheTableError(cacheDeleteErr)) {
+    console.error("[dashboard-cache] wipe cache delete", cacheDeleteErr);
+  }
 
   const now = new Date().toISOString();
-  const { error: upErr } = await supabase.from("user_memory").upsert(
-    {
-      user_id: userId,
-      kabir_memory: "",
-      patterns: [],
-      weaknesses: [],
-      improvements: [],
-      updated_at: now,
-    },
-    { onConflict: "user_id" }
-  );
+  const fullPayload: Record<string, unknown> = {
+    user_id: userId,
+    kabir_memory: "",
+    patterns: [],
+    weaknesses: [],
+    improvements: [],
+    updated_at: now,
+  };
+
+  const tryPayloads: Array<Record<string, unknown>> = [
+    fullPayload,
+    // Older schemas may not have kabir_memory.
+    { user_id: userId, patterns: [], weaknesses: [], improvements: [], updated_at: now },
+    // Narrow fallback if some arrays are absent.
+    { user_id: userId, patterns: [], updated_at: now },
+    // Last-resort keep row writable so clear action does not hard-fail.
+    { user_id: userId, updated_at: now },
+  ];
+
+  let upErr: unknown = null;
+  let writeOk = false;
+  for (const payload of tryPayloads) {
+    const { error } = await supabase
+      .from("user_memory")
+      .upsert(payload, { onConflict: "user_id" });
+    if (!error) {
+      writeOk = true;
+      upErr = null;
+      break;
+    }
+    upErr = error;
+    if (
+      isMissingUserMemoryColumnError(error, "kabir_memory") ||
+      isMissingUserMemoryColumnError(error, "weaknesses") ||
+      isMissingUserMemoryColumnError(error, "improvements") ||
+      isMissingUserMemoryColumnError(error, "patterns")
+    ) {
+      continue;
+    }
+    break;
+  }
 
   if (upErr) {
     console.error("[dashboard-cache] wipe user_memory", upErr);
   }
 
-  return { ok: !upErr };
+  return { ok: writeOk };
 }
 
 /**
@@ -314,18 +395,40 @@ export async function clearPatternRecognition(
     .update({ patterns_json: [] })
     .eq("user_id", userId);
 
-  if (cacheErr) {
+  if (cacheErr && !isMissingUserMemoryCacheTableError(cacheErr)) {
     console.error("[dashboard-cache] clear patterns_json", cacheErr);
   }
 
-  const { error: memErr } = await supabase
-    .from("user_memory")
-    .update({ weaknesses: [], patterns: [] })
-    .eq("user_id", userId);
+  let memErr: unknown = null;
+  let memOk = false;
+  const fallbackUpdates: Array<Record<string, unknown>> = [
+    { weaknesses: [], patterns: [] },
+    { patterns: [] },
+  ];
+
+  for (const updateBody of fallbackUpdates) {
+    const { error } = await supabase
+      .from("user_memory")
+      .update(updateBody)
+      .eq("user_id", userId);
+    if (!error) {
+      memOk = true;
+      memErr = null;
+      break;
+    }
+    memErr = error;
+    if (
+      isMissingUserMemoryColumnError(error, "weaknesses") ||
+      isMissingUserMemoryColumnError(error, "patterns")
+    ) {
+      continue;
+    }
+    break;
+  }
 
   if (memErr) {
     console.error("[dashboard-cache] clear user_memory patterns", memErr);
   }
 
-  return { ok: !cacheErr };
+  return { ok: memOk };
 }

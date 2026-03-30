@@ -10,6 +10,42 @@ import { getMemoryPreference } from "@/lib/memory/preferences";
 
 export const runtime = "nodejs";
 
+type MemoryActionName =
+  | "profile"
+  | "remember"
+  | "recall"
+  | "extract"
+  | "list"
+  | "forget"
+  | "update"
+  | "forget-all"
+  | "clear-patterns";
+
+function normalizeActionName(raw: unknown): MemoryActionName | null {
+  if (typeof raw !== "string") return null;
+  const value = raw.trim().toLowerCase();
+  if (!value) return null;
+  if (value === "forget-all" || value === "clear-patterns") return value;
+  if (value === "clear-memory" || value === "clear all" || value === "reset-memory") {
+    return "forget-all";
+  }
+  if (value === "reset-patterns" || value === "clear-pattern-recognition") {
+    return "clear-patterns";
+  }
+  if (
+    value === "profile" ||
+    value === "remember" ||
+    value === "recall" ||
+    value === "extract" ||
+    value === "list" ||
+    value === "forget" ||
+    value === "update"
+  ) {
+    return value;
+  }
+  return null;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { userId } = await auth();
@@ -17,8 +53,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const body = ((await req.json().catch(() => ({}))) ?? {}) as Record<
+      string,
+      unknown
+    >;
     const {
-      action,
       query,
       currentContext,
       content,
@@ -28,7 +67,28 @@ export async function POST(req: NextRequest) {
       limit,
       memoryId,
       newContent,
-    } = await req.json();
+    } = body;
+
+    const action = normalizeActionName(body.action ?? req.nextUrl.searchParams.get("action"));
+
+    const queryText = typeof query === "string" ? query : "";
+    const currentContextText =
+      typeof currentContext === "string" ? currentContext : "";
+    const contentText = typeof content === "string" ? content : "";
+    const categoryText = typeof category === "string" ? category : undefined;
+    const metadataObj =
+      metadata && typeof metadata === "object"
+        ? (metadata as Record<string, unknown>)
+        : {};
+    const messagesList = Array.isArray(messages) ? messages : [];
+    const limitNumber =
+      typeof limit === "number"
+        ? limit
+        : typeof limit === "string"
+          ? Number(limit) || 0
+          : 0;
+    const memoryIdText = typeof memoryId === "string" ? memoryId : "";
+    const newContentText = typeof newContent === "string" ? newContent : "";
 
     if (!action) {
       return NextResponse.json({ error: "action is required" }, { status: 400 });
@@ -46,7 +106,7 @@ export async function POST(req: NextRequest) {
             disabled: true,
           });
         }
-        const profile = await memoryService.getProfile(userId, currentContext || "");
+        const profile = await memoryService.getProfile(userId, currentContextText);
         return NextResponse.json({
           profile,
           context: memoryService.formatMemoriesForPrompt(profile),
@@ -55,35 +115,42 @@ export async function POST(req: NextRequest) {
       }
       case "remember": {
         if (!memoryEnabled) return NextResponse.json({ ok: false, disabled: true });
-        const result = await memoryService.remember(userId, content, category, metadata || {});
+        const result = await memoryService.remember(
+          userId,
+          contentText,
+          categoryText,
+          metadataObj
+        );
         return NextResponse.json({ ok: !!result });
       }
       case "recall": {
         if (!memoryEnabled) return NextResponse.json({ memories: [], disabled: true });
-        const memories = await memoryService.recall(userId, query || "", { limit: limit || 5 });
+        const memories = await memoryService.recall(userId, queryText, {
+          limit: limitNumber || 5,
+        });
         return NextResponse.json({ memories });
       }
       case "extract": {
         if (!memoryEnabled) return NextResponse.json({ facts: [], disabled: true });
-        const facts = await memoryService.extractAndRemember(userId, messages || []);
+        const facts = await memoryService.extractAndRemember(userId, messagesList);
         return NextResponse.json({ facts });
       }
       case "list": {
         const memories = await memoryService.listMemories(userId, {
-          query: query || "",
-          limit: limit || 30,
+          query: queryText,
+          limit: limitNumber || 30,
         });
         return NextResponse.json({ memories });
       }
       case "forget": {
-        if (!memoryId) {
+        if (!memoryIdText) {
           return NextResponse.json({ error: "memoryId is required" }, { status: 400 });
         }
-        const ok = await memoryService.forget(userId, memoryId);
+        const ok = await memoryService.forget(userId, memoryIdText);
         return NextResponse.json({ ok });
       }
       case "update": {
-        if (!memoryId || !newContent) {
+        if (!memoryIdText || !newContentText) {
           return NextResponse.json(
             { error: "memoryId and newContent are required" },
             { status: 400 }
@@ -91,10 +158,10 @@ export async function POST(req: NextRequest) {
         }
         const result = await memoryService.updateMemory(
           userId,
-          memoryId,
-          newContent,
-          category,
-          metadata || {}
+          memoryIdText,
+          newContentText,
+          categoryText,
+          metadataObj
         );
         return NextResponse.json({ ok: !!result, memory: result || null });
       }

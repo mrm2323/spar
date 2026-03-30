@@ -59,6 +59,18 @@ function hasEndConfirmation(text: string): boolean {
   return /\b(yes|confirm|go ahead|do it|end now|stop now)\b/i.test(text);
 }
 
+function readStringField(
+  obj: Record<string, unknown> | undefined,
+  keys: string[]
+): string {
+  if (!obj) return "";
+  for (const key of keys) {
+    const v = obj[key];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return "";
+}
+
 export default function SessionPage() {
   const params = useParams<{ id: string }>();
   const id = params?.id;
@@ -193,44 +205,38 @@ export default function SessionPage() {
 
     vapi.on("speech-start", () => {
       setSpeaking("kabir");
-      markUserActivity();
     });
     vapi.on("speech-end", () => {
       setSpeaking("listening");
-      // Start silence countdown after Kabir finishes, not during his turn.
-      markUserActivity();
+      // Silence timing is based on real user activity, not assistant speech.
     });
 
     vapi.on("message", (payload: unknown) => {
-      const body = (payload as { message?: Record<string, unknown> })?.message;
-      const row = (body || payload || {}) as Record<string, unknown>;
+      const top = (payload || {}) as Record<string, unknown>;
+      const body = (top.message || undefined) as Record<string, unknown> | undefined;
+
       const roleRaw =
-        typeof row.role === "string"
-          ? row.role
-          : typeof row.speaker === "string"
-            ? row.speaker
-            : typeof row.from === "string"
-              ? row.from
-              : "";
+        readStringField(body, ["role", "speaker", "from"]) ||
+        readStringField(top, ["role", "speaker", "from"]);
       const role = roleRaw.toLowerCase();
-      const textRaw =
-        typeof row.content === "string"
-          ? row.content
-          : typeof row.message === "string"
-            ? row.message
-            : typeof row.text === "string"
-              ? row.text
-              : "";
-      const text = textRaw.trim();
+
+      const text =
+        readStringField(body, ["content", "message", "text", "transcript"]) ||
+        readStringField(top, ["content", "message", "text", "transcript"]);
+
       if (!text) return;
 
       if (role.includes("assistant") || role.includes("bot") || role.includes("agent")) {
-        markUserActivity();
         appendLiveMessage({ role: "assistant", source: "voice", content: text });
         return;
       }
 
-      if (role.includes("user") || role.includes("customer")) {
+      const likelyUserTranscript =
+        !role &&
+        (String(top.type || "").toLowerCase().includes("transcript") ||
+          String(body?.type || "").toLowerCase().includes("transcript"));
+
+      if (role.includes("user") || role.includes("customer") || likelyUserTranscript) {
         markUserActivity();
         appendLiveMessage({ role: "user", source: "voice", content: text });
         const now = Date.now();
