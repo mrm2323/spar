@@ -406,7 +406,7 @@ export default function MemoryDashboardPage() {
           how well kabir knows you
         </h2>
         <p className="mt-2 text-xs text-slate-500">
-          rough signal, not a grade — it's how much context he's stacked from your practices.
+          rough signal, not a grade — it&apos;s how much context he&apos;s stacked from your practices.
         </p>
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2">

@@ -172,7 +172,7 @@ export function GenZLanding(props: GenZLandingProps) {
                 </button>
                 {waitlistJoinState === "error" ? (
                   <p className="mt-2 text-xs text-rose-300/90">
-                    couldn't join right now. try again in a moment.
+                    couldn&apos;t join right now. try again in a moment.
                   </p>
                 ) : null}
               </div>

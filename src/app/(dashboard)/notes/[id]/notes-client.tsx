@@ -63,9 +63,8 @@ function stripLegacyNotePayload(
   raw: Record<string, unknown> | null | undefined
 ): NotesData | null {
   if (!raw || typeof raw !== "object") return null;
-  const { keyHighlights: _kh, ...rest } = raw as Record<string, unknown> & {
-    keyHighlights?: unknown;
-  };
+  const rest = { ...(raw as Record<string, unknown>) };
+  delete rest.keyHighlights;
   return rest as NotesData;
 }
 
@@ -443,7 +442,7 @@ export function NotesClient({
       if (!cancelled) setAttempt((a) => a + 1);
     };
 
-    const delay = attempt === 0 ? 3000 : attempt < 4 ? 5000 : 8000;
+    const delay = attempt === 0 ? 0 : attempt < 4 ? 4000 : 7000;
     const timer = setTimeout(tryGetNotes, delay);
 
     return () => {

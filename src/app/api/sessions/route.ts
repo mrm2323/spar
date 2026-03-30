@@ -2,6 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { createSupabaseAdmin } from "@/lib/supabase/server";
 import { getUserSessionUsage } from "@/lib/session-cap";
 import { groupSessionsIntoThreads } from "@/lib/session-threading";
+import { getMemoryResetAt } from "@/lib/memory/preferences";
 import { NextResponse } from "next/server";
 
 type EnrichedSession = {
@@ -20,6 +21,7 @@ export async function GET() {
   }
 
   const supabase = createSupabaseAdmin();
+  const resetAfterIso = await getMemoryResetAt(userId);
   const cap = await getUserSessionUsage(supabase, userId, {
     includeActive: true,
   });
@@ -29,7 +31,7 @@ export async function GET() {
     .from("user_memory")
     .select("phone_number")
     .eq("user_id", userId)
-    .single();
+    .maybeSingle();
 
   // Build list of user IDs to query (Clerk ID + phone:number if linked)
   const userIds = [userId];
@@ -37,13 +39,19 @@ export async function GET() {
     userIds.push(`phone:${memory.phone_number}`);
   }
 
-  const { data: sessions } = await supabase
+  let sessionsQuery = supabase
     .from("sessions")
     .select("id, context, ended_at, duration_seconds, user_id")
     .in("user_id", userIds)
     .eq("status", "completed")
     .order("ended_at", { ascending: false })
     .limit(20);
+
+  if (resetAfterIso) {
+    sessionsQuery = sessionsQuery.gte("created_at", resetAfterIso);
+  }
+
+  const { data: sessions } = await sessionsQuery;
 
   const list = sessions || [];
   const sessionIds = list.map((s) => s.id);
@@ -113,10 +121,9 @@ export async function GET() {
     thread_session_ids: t.sessions.map((s) => s.id),
   }));
 
-  const practiceSessionCount = Math.max(
-    memoryFull?.total_sessions ?? 0,
-    threaded.length
-  );
+  const practiceSessionCount = resetAfterIso
+    ? threaded.length
+    : Math.max(memoryFull?.total_sessions ?? 0, threaded.length);
 
   return NextResponse.json({
     sessions: threaded,

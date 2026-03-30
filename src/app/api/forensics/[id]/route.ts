@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { createSupabaseAdmin } from "@/lib/supabase/server";
 import { generateKabirNotes } from "@/lib/forensics/generate";
+import { sessionBelongsToUser } from "@/lib/session-access";
 import { NextResponse } from "next/server";
 
 export async function GET(
@@ -14,6 +15,10 @@ export async function GET(
   }
 
   const supabase = createSupabaseAdmin();
+  const allowed = await sessionBelongsToUser(supabase, sessionId, userId);
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   const { data: report } = await supabase
     .from("forensics_reports")
@@ -38,6 +43,12 @@ export async function POST(
   const { userId } = await auth();
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const supabase = createSupabaseAdmin();
+  const allowed = await sessionBelongsToUser(supabase, sessionId, userId);
+  if (!allowed) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   let forceRegenerate = false;

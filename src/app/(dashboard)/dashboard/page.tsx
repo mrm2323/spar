@@ -74,6 +74,13 @@ interface ProcessedFile {
   text: string;
 }
 
+type MemoryEntry = {
+  metadata?: {
+    category?: string;
+    kabirNoticedAt?: string;
+  };
+};
+
 function DashboardInner() {
   const { user, isLoaded: userLoaded } = useUser();
   const firstName = user?.firstName?.trim() || null;
@@ -174,15 +181,15 @@ function DashboardInner() {
         body: JSON.stringify({ action: "list", limit: 60 }),
       }).then((r) => r.json().catch(() => ({}))),
     ])
-      .then(([sessionsData, profileData, peopleData, memoryData]) => {
+      .then(([sessionsData, , peopleData, memoryData]) => {
         if (sessionsData.sessions) setSessions(sessionsData.sessions);
         if (typeof sessionsData.practiceSessionCount === "number") {
           setPracticeSessionCount(sessionsData.practiceSessionCount);
         }
         if (sessionsData.cap) setCapStatus(sessionsData.cap);
         if (Array.isArray(peopleData.people)) setPeople(peopleData.people);
-        const goals = (memoryData.memories || []).filter(
-          (e: any) => e.metadata?.category === "goals"
+        const goals = ((memoryData.memories as MemoryEntry[] | undefined) || []).filter(
+          (e) => e.metadata?.category === "goals"
         );
         if (Array.isArray(goals)) setGoalEntries(goals);
       })

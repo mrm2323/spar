@@ -362,7 +362,7 @@ function normalizeKabirNotesOutput(
           const o = item as Record<string, unknown>;
           const question =
             typeof o.question === "string" ? o.question.trim() : "";
-          let answer =
+          const answer =
             typeof o.answer === "string" ? sanitizeSpokenLine(o.answer) : "";
           if (!question || !answer) return null;
           return { question, answer };
