@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
-import { EarlyAccessForm } from "@/app/early-access-form";
 import { HeroProductMockup } from "./HeroProductMockup";
 
 const SCENARIOS = [
@@ -142,12 +141,12 @@ export function LandingHero({
               <div className="mt-10 max-w-lg rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
                 <p className="text-sm text-amber-100">
                   {waitlistStatus === "pending"
-                    ? "Your account is on the waitlist. We will unlock access after approval."
+                    ? "Your access request is pending approval. We will unlock access after approval."
                     : waitlistStatus === "rejected"
-                      ? "This account is currently not approved for beta access. Contact us if this looks wrong."
+                      ? "This account is currently not approved for beta access. We can review it again if needed."
                       : waitlistStatus === "none"
-                        ? "This signed-in email is not on the waitlist yet. Join the waitlist with this email to be considered."
-                        : "Your account does not have beta access yet. Join the waitlist or wait for approval."}
+                        ? "This signed-in email has no access request yet. It will be created automatically when needed."
+                        : "Your account does not have beta access yet. Your access request is pending review."}
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Link
@@ -160,24 +159,19 @@ export function LandingHero({
               </div>
             )
           ) : (
-            <div className="mt-10">
-              <EarlyAccessForm />
-              <p className="mt-3 text-xs text-slate-500">
-                Already approved?{" "}
-                <Link
-                  href="/sign-in"
-                  className="text-slate-300 underline decoration-slate-600 underline-offset-2 transition-colors hover:text-cyan-400"
-                >
-                  Sign in
-                </Link>
-                {" · "}
-                <Link
-                  href="/sign-up"
-                  className="text-slate-300 underline decoration-slate-600 underline-offset-2 transition-colors hover:text-cyan-400"
-                >
-                  Create account
-                </Link>
-              </p>
+            <div className="mt-10 flex flex-wrap items-center gap-3">
+              <Link
+                href="/sign-in"
+                className="inline-flex min-h-[48px] items-center rounded-xl bg-gradient-to-b from-cyan-300 to-cyan-500 px-6 py-3 text-sm font-semibold text-slate-950 shadow-[0_0_0_1px_rgba(255,255,255,0.1)_inset,0_10px_28px_rgba(34,211,238,0.25)] transition-all hover:from-cyan-200 hover:to-cyan-400"
+              >
+                Try Kabir
+              </Link>
+              <Link
+                href="/sign-up"
+                className="inline-flex min-h-[48px] items-center rounded-xl border border-white/14 bg-white/[0.05] px-6 py-3 text-sm font-medium text-slate-100 transition-colors hover:border-white/24 hover:bg-white/[0.08]"
+              >
+                Create account
+              </Link>
             </div>
           )}
         </section>

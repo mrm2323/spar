@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { UserButton } from "@clerk/nextjs";
-import { EarlyAccessForm } from "@/app/early-access-form";
 import type { BetaWaitlistStatus } from "@/lib/beta-access";
 
 const BG = "#0A0A0F";
@@ -21,8 +20,6 @@ type GenZLandingProps = {
   waitlistStatus: BetaWaitlistStatus | "unknown";
   /** Completed practice sessions (for CTA copy). */
   completedSessionCount: number;
-  /** Signed-in user's primary email (used for one-click waitlist join). */
-  signedInEmail?: string | null;
 };
 
 function TryKabirHref({ isSignedIn, isApproved }: GenZLandingProps) {
@@ -72,33 +69,7 @@ export function GenZLanding(props: GenZLandingProps) {
     isApproved,
     waitlistStatus,
     completedSessionCount,
-    signedInEmail,
   } = props;
-  const [waitlistJoinState, setWaitlistJoinState] = useState<
-    "idle" | "submitting" | "success" | "error"
-  >("idle");
-
-  const canJoinWaitlistFromBanner =
-    isSignedIn &&
-    !isApproved &&
-    Boolean(signedInEmail) &&
-    (waitlistStatus === "unknown" || waitlistStatus === "none" || waitlistStatus === "rejected");
-
-  async function joinWaitlistWithSignedInEmail() {
-    if (!signedInEmail || waitlistJoinState === "submitting") return;
-    setWaitlistJoinState("submitting");
-    try {
-      const res = await fetch("/api/waitlist", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: signedInEmail }),
-      });
-      if (!res.ok) throw new Error("waitlist_join_failed");
-      setWaitlistJoinState("success");
-    } catch {
-      setWaitlistJoinState("error");
-    }
-  }
 
   return (
     <div
@@ -115,15 +86,6 @@ export function GenZLanding(props: GenZLandingProps) {
           spar
         </Link>
         <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
-          {!isSignedIn ? (
-            <Link
-              href="#waitlist"
-              className="rounded-full border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-white/5 sm:px-4"
-              style={{ borderColor: `${ACCENT2}99`, color: ACCENT2 }}
-            >
-              join waitlist
-            </Link>
-          ) : null}
           <Link
             href={tryHref}
             className="rounded-full border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-white/5 sm:px-4"
@@ -152,31 +114,10 @@ export function GenZLanding(props: GenZLandingProps) {
             }}
           >
             {waitlistStatus === "pending"
-              ? "you're on the list — we'll unlock you when we can."
+              ? "your access request is pending approval. we'll unlock your account as soon as it's approved."
               : waitlistStatus === "rejected"
-                ? "this account doesn't have access yet. reach out if that feels wrong."
-                : "your account isn't cleared for the beta yet. hang tight or join the waitlist with this email."}
-            {canJoinWaitlistFromBanner ? (
-              <div className="mt-3">
-                <button
-                  type="button"
-                  onClick={() => void joinWaitlistWithSignedInEmail()}
-                  disabled={waitlistJoinState === "submitting" || waitlistJoinState === "success"}
-                  className="rounded-full border border-cyan-400/45 bg-cyan-500/10 px-4 py-1.5 text-xs font-medium text-cyan-100 transition-colors hover:bg-cyan-500/20 disabled:opacity-60"
-                >
-                  {waitlistJoinState === "submitting"
-                    ? "joining waitlist..."
-                    : waitlistJoinState === "success"
-                      ? "joined with this email"
-                      : "join waitlist with this email"}
-                </button>
-                {waitlistJoinState === "error" ? (
-                  <p className="mt-2 text-xs text-rose-300/90">
-                    couldn&apos;t join right now. try again in a moment.
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
+                ? "your request was reopened and is now pending approval again."
+                : "your access request is being created. check status in a moment."}
             <div className="mt-2">
               <Link
                 href="/beta/pending"
@@ -226,38 +167,12 @@ export function GenZLanding(props: GenZLandingProps) {
               {isSignedIn && isApproved
                 ? "open the app whenever you’re ready to practice."
                 : isSignedIn && !isApproved
-                  ? "we’ll email you when your account can use kabir."
+                  ? "request pending approval. we&apos;ll unlock access soon."
                   : "sign in free — your first practice is on us."}
             </p>
           </div>
         </div>
       </section>
-
-      {/* Waitlist — logged out (high on page + #waitlist for header link) */}
-      {!isSignedIn ? (
-        <section
-          id="waitlist"
-          className="scroll-mt-24 border-b border-white/[0.06] pb-16 pt-2"
-          style={{ backgroundColor: BG }}
-        >
-          <div className="mx-auto max-w-md px-5 sm:px-8">
-            <p className="text-center text-xs font-medium uppercase tracking-[0.14em]" style={{ color: MUTED }}>
-              want early access
-            </p>
-            <EarlyAccessForm compact hideLabel />
-            <p className="mt-4 text-center text-xs" style={{ color: MUTED }}>
-              already approved{" "}
-              <Link
-                href="/sign-in"
-                className="underline decoration-white/20 underline-offset-2"
-                style={{ color: ACCENT }}
-              >
-                get started
-              </Link>
-            </p>
-          </div>
-        </section>
-      ) : null}
 
       {/* SECTION 2 — MOMENT */}
       <section style={{ backgroundColor: BG_SECTION }} className="py-20 sm:py-24">

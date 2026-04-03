@@ -86,7 +86,7 @@ export default clerkMiddleware(async (auth, req) => {
       {
         error: "beta_required",
         message:
-          "Beta access not enabled for this account. Join the waitlist or wait for approval.",
+          "Beta access not enabled for this account. Your access request is pending approval.",
       },
       { status: 403 }
     );

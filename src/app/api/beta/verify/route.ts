@@ -1,8 +1,8 @@
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import {
+  ensureBetaApprovalRequest,
   isBetaBypassUserId,
-  isEmailBetaApproved,
 } from "@/lib/beta-access";
 
 /**
@@ -30,8 +30,8 @@ export async function GET() {
       return NextResponse.json({ approved: false, reason: "no_email" });
     }
 
-    const approved = await isEmailBetaApproved(email);
-    return NextResponse.json({ approved });
+    const ensured = await ensureBetaApprovalRequest(email);
+    return NextResponse.json({ approved: ensured.status === "approved" });
   } catch (e) {
     console.error("[beta/verify]", e);
     return NextResponse.json({ approved: false }, { status: 500 });

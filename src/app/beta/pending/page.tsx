@@ -2,8 +2,8 @@ import { auth, clerkClient } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import {
+  ensureBetaApprovalRequest,
   isBetaBypassUserId,
-  isEmailBetaApproved,
 } from "@/lib/beta-access";
 
 export default async function BetaPendingPage() {
@@ -23,8 +23,11 @@ export default async function BetaPendingPage() {
       user.primaryEmailAddress?.emailAddress ??
       user.emailAddresses[0]?.emailAddress;
 
-    if (email && (await isEmailBetaApproved(email))) {
-      redirect("/dashboard");
+    if (email) {
+      const ensured = await ensureBetaApprovalRequest(email);
+      if (ensured.status === "approved") {
+        redirect("/dashboard");
+      }
     }
   } catch (e) {
     console.error("[beta/pending]", e);
@@ -36,14 +39,14 @@ export default async function BetaPendingPage() {
         SPAR beta
       </p>
       <h1 className="mt-4 max-w-md text-xl font-semibold tracking-tight text-white">
-        You&apos;re on the list
+        Request received
       </h1>
       <p className="mt-4 max-w-md text-sm leading-relaxed text-slate-400">
-        This account doesn&apos;t have access yet. When we approve your email,
-        refresh this page or sign out and back in — you&apos;ll land in the app.
+        Your access request is pending approval. When your account is approved,
+        refresh this page or sign out and back in and you&apos;ll enter the app.
       </p>
       <p className="mt-6 max-w-md text-xs text-slate-500">
-        Signed in with the same email you used for the waitlist.
+        Keep using this same signed-in email so we can match approval correctly.
       </p>
       <p className="mt-8 w-full max-w-md border-t border-white/[0.06] pt-8 text-xs text-slate-500">
         <a

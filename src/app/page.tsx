@@ -3,7 +3,7 @@ import { clerkClient } from "@clerk/nextjs/server";
 import { createSupabaseAdmin } from "@/lib/supabase/server";
 import { GenZLanding } from "@/components/landing/GenZLanding";
 import {
-  getEmailBetaStatus,
+  ensureBetaApprovalRequest,
   isBetaBypassUserId,
   type BetaWaitlistStatus,
 } from "@/lib/beta-access";
@@ -24,7 +24,6 @@ export default async function LandingPage() {
 
   let isApproved = false;
   let waitlistStatus: BetaWaitlistStatus | "unknown" = "unknown";
-  let signedInEmail: string | null = null;
 
   if (isBetaBypassUserId(userId)) {
     isApproved = true;
@@ -37,10 +36,10 @@ export default async function LandingPage() {
         user.primaryEmailAddress?.emailAddress ??
         user.emailAddresses[0]?.emailAddress ??
         "";
-      signedInEmail = email || null;
 
       if (email) {
-        waitlistStatus = await getEmailBetaStatus(email);
+        const ensured = await ensureBetaApprovalRequest(email);
+        waitlistStatus = ensured.status;
         isApproved = waitlistStatus === "approved";
       }
     } catch (e) {
@@ -69,7 +68,6 @@ export default async function LandingPage() {
       isApproved={isApproved}
       waitlistStatus={waitlistStatus}
       completedSessionCount={completedSessionCount}
-      signedInEmail={signedInEmail}
     />
   );
 }

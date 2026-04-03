@@ -55,7 +55,7 @@ export function EarlyAccessForm({
         className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-stretch"
       >
         <label htmlFor="early-access-email" className="sr-only">
-          Email for waitlist
+          Email for access request
         </label>
         <input
           id="early-access-email"
@@ -66,7 +66,7 @@ export function EarlyAccessForm({
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           disabled={status === "success"}
-          placeholder="Work or personal email"
+          placeholder="Enter your email"
           className="min-h-[48px] flex-1 rounded-xl border border-white/[0.12] bg-slate-950/60 px-4 py-3 text-sm text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] placeholder:text-slate-500 outline-none transition-colors focus:border-cyan-400/40 focus:ring-2 focus:ring-cyan-400/15 disabled:opacity-70"
         />
         <button
@@ -77,14 +77,14 @@ export function EarlyAccessForm({
           {status === "submitting"
             ? "Sending…"
             : status === "success"
-              ? "You’re in the queue"
-              : "Join waitlist"}
+              ? "Request received"
+              : "Request access"}
         </button>
       </form>
       <p className="mt-3 text-xs text-slate-500">
         {status === "success"
-          ? "Thanks — we’ll email you when your spot opens. If you already have an account, we’ll unlock access when you’re approved."
-          : "We’ll email you when we’re ready. No spam."}
+          ? "Thanks - we received your request and will approve access as spots open."
+          : "Submit your email and we will review access as spots open."}
       </p>
 
       {status === "error" && (
