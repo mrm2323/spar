@@ -162,7 +162,7 @@ BAD: 'You were vague when describing the problem.'
 GOOD: 'You told me Sarah gets quiet when she is upset. But your opening line — telling her everything that is wrong — is going to trigger exactly that. She will shut down before you get to what you actually want. Start with what you want for the relationship, not what is broken.'
 
 2d. If the conversation was too short to gather meaningful context, say that honestly in readiness, e.g.:
-'I did not get to ask you enough about the situation. Next time give me 5 minutes before we start practicing. The more I know about who you are talking to and what is really going on, the better I can help.'
+'I did not get enough detail yet to give a sharp read. Next round, start with who this is with, what outcome you want, and the exact line you are afraid to say. Then I can coach this properly.'
 
 3. anticipatedQuestions — EXACTLY 2 to 3 objects.
 
@@ -201,7 +201,7 @@ Rules for readiness (pick what fits; paraphrase if needed; never numbers):
 - Ready: 'You are ready. You said what you needed to say and you said it clearly. Go do it. Call me after.'
 - Partial: 'Your opening is solid. But when I pushed back you softened everything. Practice the pushback once more before you go in.'
 - Not ready: 'Honestly, not yet. You are still circling around the thing you need to say instead of saying it. Call me back. We will get there.'
-- Too short: 'I did not hear enough to tell you. Give me 5 minutes next time and I will give you a real answer.'
+- Too short: 'I did not hear enough detail yet to give a sharp read. Give me one more focused round with the exact line you want to say and I will tighten this.'
 
 9. patternDetected — Optional string. Only if a communication pattern was clearly visible. Otherwise omit or empty string.
 
@@ -343,7 +343,7 @@ function normalizeKabirNotesOutput(
     typeof out.readiness === "string" ? out.readiness.trim() : "";
   if (!readinessStr) {
     readinessStr =
-      "I did not hear enough to tell you. Give me 5 minutes next time and I will give you a real answer.";
+      "I did not hear enough detail yet to give a sharp read. Give me one more focused round with the exact line you want to say and I will tighten this.";
   }
   out.readiness = readinessStr;
 

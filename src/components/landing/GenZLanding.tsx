@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { UserButton } from "@clerk/nextjs";
 import type { BetaWaitlistStatus } from "@/lib/beta-access";
 
 const BG = "#0A0A0F";
@@ -87,19 +86,12 @@ export function GenZLanding(props: GenZLandingProps) {
         </Link>
         <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
           <Link
-            href={tryHref}
+            href={isSignedIn ? "/dashboard" : "/sign-in"}
             className="rounded-full border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-white/5 sm:px-4"
             style={{ borderColor: `${ACCENT}99`, color: ACCENT }}
           >
-            try kabir
+            {isSignedIn ? "profile" : "sign in"}
           </Link>
-          {isSignedIn ? (
-            <UserButton
-              appearance={{
-                elements: { avatarBox: "h-8 w-8" },
-              }}
-            />
-          ) : null}
         </div>
       </header>
 

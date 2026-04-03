@@ -84,7 +84,7 @@ function getReadinessDisplay(notes: NotesData): string {
     return "Honestly, not yet. You are still circling around the thing you need to say instead of saying it. Call me back. We will get there.";
   }
   if (lbl === "Not scored yet") {
-    return "I did not hear enough to tell you. Give me 5 minutes next time and I will give you a real answer.";
+    return "I did not hear enough detail yet to give a sharp read. Give me one more focused round with the exact line you want to say and I will tighten this.";
   }
   return "this practice was saved before kabir's readiness line. run it again to get his honest read.";
 }

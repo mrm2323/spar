@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { UserButton } from "@clerk/nextjs";
 import { HeroProductMockup } from "./HeroProductMockup";
 
 const SCENARIOS = [
@@ -47,23 +46,12 @@ export function LandingHero({
           className="flex min-h-[40px] items-center justify-end gap-3 sm:gap-4"
           aria-label="Account"
         >
-          {isSignedIn ? (
-            <>
-              <Link
-                href="/dashboard/memory"
-                className="text-xs font-medium uppercase tracking-wider text-slate-300 transition-colors hover:text-cyan-300"
-              >
-                Memory
-              </Link>
-              <UserButton
-                appearance={{
-                  elements: {
-                    avatarBox: "h-8 w-8",
-                  },
-                }}
-              />
-            </>
-          ) : null}
+          <Link
+            href={isSignedIn ? "/dashboard" : "/sign-in"}
+            className="rounded-full border border-cyan-400/45 bg-cyan-500/10 px-4 py-1.5 text-xs font-medium uppercase tracking-wider text-cyan-100 transition-colors hover:bg-cyan-500/20"
+          >
+            {isSignedIn ? "Profile" : "Sign in"}
+          </Link>
         </nav>
       </header>
 

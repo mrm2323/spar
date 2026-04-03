@@ -15,6 +15,8 @@ type SessionStatus =
   | "feedback"
   | "error";
 type SpeakingState = "listening" | "kabir" | "idle";
+type AudioEnvironmentMode = "standard" | "noisy";
+type AudioModePreference = "auto" | "noisy";
 
 type LiveMessage = {
   id: string;
@@ -33,7 +35,8 @@ const SILENCE_NUDGE_1_SECONDS = 10;
 const SILENCE_NUDGE_2_SECONDS = 20;
 const SILENCE_AUTO_END_SECONDS = 30;
 
-const LOCAL_MIC_ACTIVITY_THRESHOLD = 0.035;
+const LOCAL_MIC_ACTIVITY_THRESHOLD_STANDARD = 0.035;
+const LOCAL_MIC_ACTIVITY_THRESHOLD_NOISY = 0.08;
 
 function isUserTranscriptRole(role: string): boolean {
   const r = role.toLowerCase();
@@ -147,6 +150,8 @@ export default function SessionPage() {
   const [liveMessages, setLiveMessages] = useState<LiveMessage[]>([]);
   const [contextSummary, setContextSummary] = useState<ContextSummary | null>(null);
   const [silenceBanner, setSilenceBanner] = useState<string | null>(null);
+  const [audioModePreference, setAudioModePreference] = useState<AudioModePreference>("auto");
+  const [autoDetectedAudioMode, setAutoDetectedAudioMode] = useState<AudioEnvironmentMode>("standard");
   const replayStartSentRef = useRef(false);
   /** Last time we heard the user (transcript, mic, typed, file, composer). */
   const lastUserSoundRef = useRef(Date.now());
@@ -162,6 +167,30 @@ export default function SessionPage() {
   /** Live row id for in-place updates of streaming Vapi `transcript` partials. */
   const assistantVoiceStreamIdRef = useRef<string | null>(null);
   const userVoiceStreamIdRef = useRef<string | null>(null);
+  const speakingRef = useRef<SpeakingState>("idle");
+  const audioModePreferenceRef = useRef<AudioModePreference>("auto");
+  const effectiveAudioModeRef = useRef<AudioEnvironmentMode>("standard");
+  const localMicActivityThresholdRef = useRef(LOCAL_MIC_ACTIVITY_THRESHOLD_STANDARD);
+  const callStartAtRef = useRef<number>(0);
+  const autoNoiseSamplesRef = useRef(0);
+  const autoNoiseHighSamplesRef = useRef(0);
+  const autoModeSwitchedRef = useRef(false);
+  const effectiveAudioMode: AudioEnvironmentMode =
+    audioModePreference === "auto" ? autoDetectedAudioMode : audioModePreference;
+  const localMicActivityThreshold =
+    effectiveAudioMode === "noisy"
+      ? LOCAL_MIC_ACTIVITY_THRESHOLD_NOISY
+      : LOCAL_MIC_ACTIVITY_THRESHOLD_STANDARD;
+
+  useEffect(() => {
+    speakingRef.current = speaking;
+  }, [speaking]);
+
+  useEffect(() => {
+    audioModePreferenceRef.current = audioModePreference;
+    effectiveAudioModeRef.current = effectiveAudioMode;
+    localMicActivityThresholdRef.current = localMicActivityThreshold;
+  }, [audioModePreference, effectiveAudioMode, localMicActivityThreshold]);
 
   const appendLiveMessage = useCallback((message: Omit<LiveMessage, "id">) => {
     setLiveMessages((prev) => [
@@ -282,6 +311,7 @@ export default function SessionPage() {
 
     queueMicrotask(() => setStatus("connecting"));
 
+    let constrainedAudioTrack: MediaStreamTrack | null = null;
     const vapi = new Vapi(process.env.NEXT_PUBLIC_VAPI_PUBLIC_KEY!);
     vapiRef.current = vapi;
 
@@ -290,10 +320,28 @@ export default function SessionPage() {
       userVoiceStreamIdRef.current = null;
       setStatus("active");
       initSilenceClock();
+      callStartAtRef.current = Date.now();
+      autoNoiseSamplesRef.current = 0;
+      autoNoiseHighSamplesRef.current = 0;
+      autoModeSwitchedRef.current = false;
+      if (audioModePreferenceRef.current === "auto") {
+        setAutoDetectedAudioMode("standard");
+      }
       try {
-        await vapi.increaseMicLevel(1.15);
-      } catch {
-        /* noop */
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            channelCount: 1,
+          },
+        });
+        constrainedAudioTrack = stream.getAudioTracks()[0] ?? null;
+        if (constrainedAudioTrack) {
+          await vapi.setInputDevicesAsync({ audioSource: constrainedAudioTrack });
+        }
+      } catch (err) {
+        console.warn("[session] constrained mic setup failed, keeping default", err);
       }
       const daily = (
         vapi as unknown as {
@@ -301,17 +349,57 @@ export default function SessionPage() {
         }
       ).call;
       daily?.on?.("local-audio-level", (ev: unknown) => {
+        const now = Date.now();
         const level =
           ev && typeof ev === "object" && "audioLevel" in ev
             ? Number((ev as { audioLevel: number }).audioLevel)
             : 0;
-        if (level > LOCAL_MIC_ACTIVITY_THRESHOLD) {
-          lastUserSoundRef.current = Date.now();
+
+        // Auto-detect noisy environments from sustained ambient mic activity
+        // while Kabir is not speaking and user is not actively transcribing.
+        if (
+          audioModePreferenceRef.current === "auto" &&
+          !autoModeSwitchedRef.current &&
+          speakingRef.current !== "kabir"
+        ) {
+          const elapsed = now - callStartAtRef.current;
+          const sinceUserInput = now - lastUserSoundRef.current;
+          const inDetectionWindow = elapsed >= 3000 && elapsed <= 30000;
+          const likelyAmbientOnly = sinceUserInput > 2500;
+          if (inDetectionWindow && likelyAmbientOnly) {
+            autoNoiseSamplesRef.current += 1;
+            if (level > 0.045) {
+              autoNoiseHighSamplesRef.current += 1;
+            }
+            if (autoNoiseSamplesRef.current >= 40) {
+              const noisyRatio =
+                autoNoiseHighSamplesRef.current / autoNoiseSamplesRef.current;
+              if (noisyRatio >= 0.55) {
+                autoModeSwitchedRef.current = true;
+                setAutoDetectedAudioMode("noisy");
+                setSilenceBanner(
+                  "Auto mode detected a noisy place and switched to stronger filtering."
+                );
+              }
+            }
+          }
+        }
+
+        if (level > localMicActivityThresholdRef.current) {
+          lastUserSoundRef.current = now;
           silenceStageRef.current = 0;
           autoEndedForSilenceRef.current = false;
           setSilenceBanner(null);
         }
       });
+    });
+    vapi.on("call-start-progress", (evt: unknown) => {
+      const event = evt as { stage?: string; status?: string; metadata?: { error?: string } };
+      if (event?.stage === "audio-processing-setup" && event?.status === "failed") {
+        const details = event?.metadata?.error || "unknown";
+        console.warn("[session] audio processing setup failed:", details);
+        setSilenceBanner("Noise filtering is limited on this device. Use Noisy place mode for better results.");
+      }
     });
     vapi.on("call-end", () => {
       setStatus("ended");
@@ -342,6 +430,11 @@ export default function SessionPage() {
             ? merged.transcriptType
             : "final";
         const isFinal = tType === "final";
+
+        // Keep live transcript readable and reliable by rendering only finalized chunks.
+        if (!isFinal) {
+          return;
+        }
 
         const roleRawTr =
           typeof merged.role === "string" ? merged.role.toLowerCase() : "";
@@ -524,6 +617,16 @@ export default function SessionPage() {
           model: "gpt-4o",
           messages: [{ role: "system", content: systemPrompt }],
         },
+        transcriber: {
+          provider: "deepgram",
+          model: "nova-3",
+          language: "en",
+          smartFormat: true,
+          numerals: true,
+          // Trade a bit of latency for more stable wording in noisy settings.
+          endpointing: 300,
+          confidenceThreshold: 0.5,
+        },
         voice: {
           provider: "vapi",
           voiceId: "Rohan",
@@ -533,15 +636,15 @@ export default function SessionPage() {
           "Hey. It's Kabir. What conversation are you looking forward to?",
         maxDurationSeconds: sessionMaxDuration,
         startSpeakingPlan: {
-          // Slightly longer pause so Kabir doesn't jump in while you're mid-thought.
-          waitSeconds: 1.15,
+          // Noisy mode waits longer before taking the turn to reduce cross-talk interruptions.
+          waitSeconds: effectiveAudioModeRef.current === "noisy" ? 1.45 : 1.15,
           smartEndpointingPlan: { provider: "livekit" },
         },
         stopSpeakingPlan: {
-          // numWords: 0 → use VAD (voiceSeconds) so he stops as soon as you talk, not after 2 words.
+          // numWords: 0 → use VAD (voiceSeconds). Noisy mode is less aggressive to avoid background interruptions.
           numWords: 0,
-          voiceSeconds: 0.14,
-          backoffSeconds: 0.45,
+          voiceSeconds: effectiveAudioModeRef.current === "noisy" ? 0.2 : 0.14,
+          backoffSeconds: effectiveAudioModeRef.current === "noisy" ? 0.6 : 0.45,
         },
       })
       .then(async (call) => {
@@ -563,6 +666,7 @@ export default function SessionPage() {
     return () => {
       vapi.stop();
       vapiRef.current = null;
+      constrainedAudioTrack?.stop();
     };
   }, [
     id,
@@ -1102,6 +1206,10 @@ export default function SessionPage() {
         <p className="max-w-sm text-sm leading-relaxed text-slate-200">
           This conversation stays between you and Kabir.
         </p>
+        <p className="mt-3 max-w-md text-xs leading-relaxed text-slate-400">
+          Even 60-90 seconds is enough if you include who this is with and the
+          exact line you want to say.
+        </p>
         <button
           type="button"
           onClick={() => setTrustAcknowledged(true)}
@@ -1116,7 +1224,7 @@ export default function SessionPage() {
   return (
     <div
       data-session-page="true"
-      className="flex min-h-[80vh] flex-col items-center justify-center pb-[min(34rem,58vh)] sm:pb-[min(30rem,50vh)]"
+      className="flex min-h-[80vh] flex-col items-center justify-start pt-10 pb-[min(34rem,58vh)] sm:pb-[min(30rem,50vh)]"
     >
       {status === "connecting" && (
         <div className="text-center">
@@ -1159,6 +1267,39 @@ export default function SessionPage() {
           <p className="mt-2 font-mono text-sm text-slate-400">
             {formatTime(elapsed)}
           </p>
+          <div className="mt-3 flex flex-col items-center gap-1.5">
+            <span className="text-[11px] text-slate-500">
+              Audio mode {audioModePreference === "auto" ? `(Auto: ${effectiveAudioMode})` : ""}
+            </span>
+            <div className="flex items-center gap-1.5">
+              {(["auto", "noisy"] as const).map((mode) => {
+                const selected = audioModePreference === mode;
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => {
+                      setAudioModePreference(mode);
+                      if (mode !== "auto") {
+                        setSilenceBanner(null);
+                      }
+                    }}
+                    className={`rounded-full border px-3 py-1 text-[11px] font-medium transition-colors ${
+                      selected
+                        ? mode === "noisy"
+                          ? "border-amber-400/70 bg-amber-500/20 text-amber-100"
+                          : mode === "auto"
+                            ? "border-cyan-400/70 bg-cyan-500/20 text-cyan-100"
+                            : "border-slate-400/70 bg-slate-700/35 text-slate-100"
+                        : "border-slate-600/70 bg-slate-900/60 text-slate-300"
+                    }`}
+                  >
+                    {mode === "auto" ? "Auto" : "Noisy place"}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           {contextSummary ? (
             <p className="mt-2 text-center text-[11px] text-emerald-300/85">
               Context loaded: {contextSummary.contextChars || 0} chars
@@ -1174,7 +1315,7 @@ export default function SessionPage() {
             <p className="mt-2 text-xs text-cyan-300/90">{silenceBanner}</p>
           ) : null}
 
-          <div className="mt-5 w-[min(100vw-1.25rem,46rem)] rounded-xl border border-slate-700/60 bg-slate-950/55 px-3 py-3 backdrop-blur">
+          <div className="mt-3 w-[min(100vw-1.25rem,46rem)] rounded-xl border border-slate-700/60 bg-slate-950/55 px-3 py-3 backdrop-blur">
             <div className="mb-2 flex items-center gap-2 text-xs text-slate-400">
               <MessageSquareText className="h-3.5 w-3.5" />
               Live transcript
